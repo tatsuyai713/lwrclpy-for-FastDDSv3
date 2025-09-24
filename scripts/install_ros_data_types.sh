@@ -1,0 +1,35 @@
+# 1) 既存スクリプトで生成 & ビルド
+bash gen_python_types.sh
+
+# 2) 正しい BUILD_ROOT を使ってインストール
+sudo INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \
+     BUILD_ROOT=/media/psf/Home/repos/lwrclpy/._types_python_build_v3 \
+     bash install_python_types.sh
+
+# 3) パスを通す（シェルの RC にも追記推奨）
+export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH
+export LD_LIBRARY_PATH=/opt/fast-dds-v3-libs/python/src:$LD_LIBRARY_PATH
+
+# 4) 確認
+python3 - <<'PY'
+from std_msgs.msg import String
+s = String()
+print('OK:', type(s))
+PY
+
+BASHRC="$HOME/.bashrc"
+
+add_line_once() {
+  local line="$1"
+  local file="$2"
+  grep -qxF "$line" "$file" || echo "$line" >> "$file"
+}
+
+# ① lwrclpy 生成物
+add_line_once 'export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH' "$BASHRC"
+add_line_once 'export LD_LIBRARY_PATH=/opt/fast-dds-v3-libs/python/src:$LD_LIBRARY_PATH' "$BASHRC"
+
+# ② fastdds 本体 Python バインディング
+add_line_once 'export PYTHONPATH="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr '\'' '\'' :):$PYTHONPATH"' "$BASHRC"
+
+echo "追加完了: $BASHRC を再読み込みしてください → source ~/.bashrc"
