@@ -15,11 +15,15 @@ which swig
 swig -version   # ← 4.1.x が出ればOK
 
 # 1) 既存スクリプトで生成 & ビルド
-bash gen_python_types.sh
+#bash gen_python_types.sh
 
 # 2) 正しい BUILD_ROOT を使ってインストール
+current_dir=$(pwd)
+echo "Current dir: $current_dir"
+BUILD_ROOT=${current_dir}/../._types_python_build_v3
+echo "BUILD_ROOT: $BUILD_ROOT"
 sudo INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \
-     BUILD_ROOT=/media/psf/Home/repos/lwrclpy/._types_python_build_v3 \
+     BUILD_ROOT=${BUILD_ROOT} \
      bash install_python_types.sh
 
 # 3) パスを通す（シェルの RC にも追記推奨）
