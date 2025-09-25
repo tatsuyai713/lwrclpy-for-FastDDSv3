@@ -1,3 +1,19 @@
+#!/bin/bash
+set -e
+
+sudo apt update
+sudo apt install -y \
+    swig4.1
+ls -l /usr/bin/swig4.1
+
+# swig の代替に登録（優先度 50 は任意）
+sudo update-alternatives --install /usr/bin/swig swig /usr/bin/swig4.1 50
+
+# 反映確認
+hash -r
+which swig
+swig -version   # ← 4.1.x が出ればOK
+
 # 1) 既存スクリプトで生成 & ビルド
 bash gen_python_types.sh
 

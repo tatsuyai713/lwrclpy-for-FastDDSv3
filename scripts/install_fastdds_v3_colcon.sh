@@ -35,12 +35,18 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   build-essential git pkg-config \
   "${PYBIN%-*}-venv" "${PYBIN%-*}-dev" \
-  openjdk-17-jdk unzip wget curl \
+  unzip wget curl \
   libasio-dev libtinyxml2-dev \
   cmake ninja-build python3-dev python3-pip
 
+if ! dpkg -l | grep -qw openjdk-11-jre || ! dpkg -l | grep -qw openjdk-11-jdk; then
+    sudo apt update
+    sudo apt purge -y openjdk-* default-jdk default-jre --autoremove
+    sudo apt install -y openjdk-11-jre openjdk-11-jdk
+fi
+
 # SWIG は 4.2 未満を推奨（4.1など）。
-sudo apt-get install -y swig || sudo apt-get install -y swig4.1 || true
+sudo apt-get install -y swig4.1 || true
 
 need git
 need curl
@@ -61,9 +67,9 @@ python -m pip install -U colcon-common-extensions vcstool empy
 
 # ===== repos 取得 =====
 if [[ ! -f "${REPOS_FILE}" ]]; then
-  log "Fetching default repos file (Fast-DDS-python main)…"
+  log "Fetching default repos file (Fast-DDS-python v2.3.0)…"
   curl -fsSL -o "${REPOS_FILE}" \
-    https://raw.githubusercontent.com/eProsima/Fast-DDS-python/main/fastdds_python.repos
+    https://raw.githubusercontent.com/eProsima/Fast-DDS-python/v2.3.0/fastdds_python.repos
 fi
 [[ -f "${REPOS_FILE}" ]] || die "repos file not found: ${REPOS_FILE}"
 

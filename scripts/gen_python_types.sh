@@ -75,17 +75,22 @@ fi
 
 # ===== CMakeLists に include を必ず通す =====
 patch_cmakelists_min() {
-  local dir="$1"
+  local dir="$1"      # .../src/<pkg>/<ns>/<Type>
+  local dir_rel="$2"  # <pkg>/<ns>
   local cml="${dir}/CMakeLists.txt"
-  [[ -f "${cml}" ]] || return 0
-  if ! grep -q "__FASTDDS_INC_STAGE_ADDED__" "${cml}"; then
+  [[ -f "$cml" ]] || return 0
+  if ! grep -q "__FASTDDS_INC_STAGE_ADDED__" "$cml"; then
     {
       echo "# __FASTDDS_INC_STAGE_ADDED__"
       echo "set(FASTDDS_GEN_INCLUDE_STAGE \"${INC_STAGE_ROOT}\")"
       echo "include_directories(\"\${FASTDDS_GEN_INCLUDE_STAGE}\")"
       echo "set(CMAKE_SWIG_FLAGS \${CMAKE_SWIG_FLAGS} \"-I\${FASTDDS_GEN_INCLUDE_STAGE}\")"
       echo "set(SWIG_INCLUDE_DIRS \"\${SWIG_INCLUDE_DIRS};\${FASTDDS_GEN_INCLUDE_STAGE}\")"
-    } | cat - "${cml}" > "${cml}.tmp" && mv "${cml}.tmp" "${cml}"
+      echo "# __FASTDDS_SUBINC_ADDED__"
+      echo "include_directories(\"${INC_STAGE_ROOT}/${dir_rel}\")"
+      echo "set(CMAKE_SWIG_FLAGS \${CMAKE_SWIG_FLAGS} \"-I${INC_STAGE_ROOT}/${dir_rel}\")"
+      echo "set(SWIG_INCLUDE_DIRS \"\${SWIG_INCLUDE_DIRS};${INC_STAGE_ROOT}/${dir_rel}\")"
+    } | cat - "$cml" > "$cml.tmp" && mv "$cml.tmp" "$cml"
   fi
 }
 
@@ -124,7 +129,7 @@ gen_one() {
     \( -name '*.i' -o -name '*.hpp' -o -name '*TypeObjectSupport.*' -o -name '*PubSubTypes.*' \) \
     -exec cp -f {} "${inc_dst_dir}/" \;
 
-  patch_cmakelists_min "${outdir}"
+  patch_cmakelists_min "${outdir}" "${dir_rel}"
 }
 
 for rel in "${IDLS[@]}"; do
