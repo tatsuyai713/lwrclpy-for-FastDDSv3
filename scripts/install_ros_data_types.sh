@@ -15,7 +15,7 @@ which swig
 swig -version   # ← 4.1.x が出ればOK
 
 # 1) 既存スクリプトで生成 & ビルド
-#bash gen_python_types.sh
+bash gen_python_types.sh
 
 # 2) 正しい BUILD_ROOT を使ってインストール
 current_dir=$(pwd)
