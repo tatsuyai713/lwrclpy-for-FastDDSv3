@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import lwrclpy as rclpy
-from std_msgs.msg import String  # クラスをインポート
+from std_msgs.msg import String
 
-def callback(msg: String):       # ← ここを String に
+def callback(msg: String):
     print(f"[recv] {msg.data()}")
 
 def main():

@@ -11,7 +11,7 @@ def main():
 
     msg = String()
     i = 0
-    rate = node.create_rate(10.0)  # 10 Hz 周期で送信
+    rate = node.create_rate(10.0)  # 10 Hz
 
     try:
         while rclpy.ok():
@@ -19,7 +19,7 @@ def main():
             pub.publish(msg)
             print(f"[send] {msg.data()}")
             i += 1
-            rate.sleep()  # 周期同期
+            rate.sleep()
     finally:
         node.destroy_node()
         rclpy.shutdown()
