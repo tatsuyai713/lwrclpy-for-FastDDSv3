@@ -2,7 +2,7 @@
 
 This guide uses only the scripts you have under `scripts/` and assumes the submodule `third_party/ros-data-types-for-fastdds` has been cloned with `--recursive`.
 
-> Tested on Ubuntu 24.04, Python 3.11.
+> Tested on Ubuntu 24.04, Python 3.12.
 
 ---
 
