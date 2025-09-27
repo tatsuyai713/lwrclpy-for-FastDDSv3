@@ -5,7 +5,7 @@ set -euo pipefail
 
 # ===== Defaults (override via env or CLI flags) =====
 PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"      # install/merge-install prefix for the v3 runtime
-GEN_PREFIX="${GEN_PREFIX:-/opt/fast-dds-gen}"   # installation prefix for fastddsgen launcher
+GEN_PREFIX="${GEN_PREFIX:-/opt/fast-dds-gen-v3}"   # installation prefix for fastddsgen launcher
 WS="${WS:-$HOME/fastdds_python_ws}"             # colcon workspace
 REPOS_FILE="${REPOS_FILE:-$WS/fastdds_python.repos}"
 PYBIN="${PYBIN:-python3}"                        # Python used to create the venv
