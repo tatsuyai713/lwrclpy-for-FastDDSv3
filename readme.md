@@ -1,73 +1,109 @@
 # lwrclpy — Zero-to-Run Guide (Fast DDS v3)
 
-This guide uses only the scripts you have under `scripts/` and assumes the submodule `third_party/ros-data-types-for-fastdds` has been cloned with `--recursive`.
+This README shows **two ways** to run the examples:
 
-> Tested on Ubuntu 24.04, Python 3.12.
+1) **Use the prebuilt wheel (`.whl`)** — easiest. Works in any Ubuntu venv after `pip install` only.  
+2) Build from sources using the scripts under `scripts/` (for developers).
+
+> Tested on Ubuntu 24.04 with Python 3.12.  
+> Submodules are expected to be cloned with `--recursive` if you use the source build path.
 
 ---
 
-## 0) Pull submodules (once)
+## 1) Easiest: Use the prebuilt wheel
+
+If you already have a wheel in `dist/` (e.g. `dist/lwrclpy-0.1.0-py3-none-any.whl`), you can run the examples **without any environment variables**.
+
+```bash
+# 1) Create & activate a venv (recommended)
+python3 -m venv venv
+source venv/bin/activate
+
+# 2) Install the wheel (replace the filename if different)
+pip install dist/lwrclpy-*.whl
+
+# 3) Run the examples (two terminals)
+# Terminal A (listener)
+python3 examples/listener_string.py
+
+# Terminal B (talker)
+python3 examples/talker_string.py
+```
+
+What the wheel includes:
+
+- `lwrclpy` Python package
+- **Vendored Fast-DDS runtime** (native libs: `libfastdds.so`, `libfastcdr.so`)
+- **Vendored Fast-DDS Python package** (`fastdds/` directory including `_fastdds_python.so`)
+- **Prebuilt ROS message bindings** (so you can `from std_msgs.msg import String` immediately)
+
+No extra `PYTHONPATH` / `LD_LIBRARY_PATH` tweaks are needed in venvs; the wheel’s bootstrap loads everything from inside the package.
+
+**Troubleshooting for wheel path:**
+
+- If `pip install` succeeds but a sample fails, run:
+  ```bash
+  python3 - <<'PY'
+import pkgutil, lwrclpy, os
+print("lwrclpy at:", os.path.dirname(lwrclpy.__file__))
+print("has vendored fastdds?",
+      os.path.exists(os.path.join(os.path.dirname(lwrclpy.__file__), "_vendor", "fastdds", "_fastdds_python.so")))
+PY
+  ```
+  It should print `True` for the vendored fastdds. If not, rebuild the wheel (see Section 2) and reinstall.
+
+---
+
+## 2) Developer path: Build everything with the provided scripts
+
+This path installs Fast-DDS v3 and generates all ROS DataTypes into system prefixes under `/opt`. Use when you want to **(re)build** or update components.
+
+### 2.0) Pull submodules (once)
 
 ```bash
 git submodule update --init --recursive
 ```
 
----
+### 2.1) Install Fast-DDS v3 core, fastddsgen, and Python bindings
 
-## 1) Install Fast-DDS v3 core, fastddsgen, and the Python bindings
-
-This installs the v3 stack (colcon merge-install) into **`/opt/fast-dds-v3`** and fastddsgen into **`/opt/fast-dds-gen-v3`**.
+Installs the v3 stack (colcon merge-install) into **`/opt/fast-dds-v3`** and fastddsgen into **`/opt/fast-dds-gen-v3`**.
 
 ```bash
-cd <this-repo>
 bash scripts/install_fastdds_v3_colcon.sh
 ```
 
-Quick sanity checks:
+Quick checks:
 
 ```bash
 which fastddsgen && fastddsgen -version
 python3 -c "import fastdds; print('fastdds OK')"
 ```
 
----
+### 2.2) Install all ROS DataTypes (single command)
 
-## 2) Install all ROS DataTypes (single command)
-
-Run **one** script and everything about message types is taken care of: generation, SWIG patching, building, staging to a ROS-like layout, collecting `lib*.so`, and setting up environment variables.
+This one script completes **everything for message types**: generation, SWIG patching, building, staging as ROS-like packages, collecting `lib*.so`, and exporting env vars.
 
 ```bash
 bash scripts/install_ros_data_types.sh
 ```
 
-What it does (summary):
-- Generates Python bindings for all IDL files under `third_party/ros-data-types-for-fastdds/src` using **`fastddsgen -python`** (with the included SWIG patcher).
-- Builds the generated bindings.
-- Installs them under **`/opt/fast-dds-v3-libs/python/src/<pkg>/<ns>/...`** so you can do `from std_msgs.msg import String`.
-- Collects all generated **`lib*.so`** into **`/opt/fast-dds-v3-libs/lib`** (symlinks) so `_TypeWrapper` can `dlopen` them reliably.
-- Exports the required **`PYTHONPATH`** and **`LD_LIBRARY_PATH`** for the current shell and (idempotently) appends them to `~/.bashrc` for persistence.
+After this, a new shell will already have the required env vars via `~/.bashrc`. You can also export manually (Section 2.4).
 
-> If you open a **new** terminal after running this script, your environment should already be ready thanks to the `~/.bashrc` updates.
+### 2.3) Run the examples (source build)
 
----
-
-## 3) Run the examples
-
-Open two terminals. **Start the listener first**, then the talker.
+Open two terminals:
 
 **Terminal A (listener):**
 ```bash
-cd <this-repo>
 python3 examples/listener_string.py
 ```
 
 **Terminal B (talker):**
 ```bash
-cd <this-repo>
 python3 examples/talker_string.py
 ```
 
-You should see output like:
+You should see lines like:
 
 ```
 [recv] hello 0
@@ -75,33 +111,58 @@ You should see output like:
 ...
 ```
 
+### 2.4) (Optional) Manually re-export env (one-liner)
+
+```bash
+export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH; ADD_LD_DIRS="$(find /opt/fast-dds-v3-libs/python/src -type f -name 'lib*.so' -printf '%h
+' | sort -u | paste -sd: -)"; export LD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:${ADD_LD_DIRS}:$LD_LIBRARY_PATH; PY_SITE_PACK="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr ' ' :)"; [ -n "$PY_SITE_PACK" ] && export PYTHONPATH=${PY_SITE_PACK}:$PYTHONPATH
+```
+
+---
+
+## 3) Rebuilding the wheel yourself (optional)
+
+If you need to produce the wheel that bundles everything (used in Section 1), run:
+
+```bash
+# venv recommended
+python3 -m venv venv
+source venv/bin/activate
+
+# Build the self-contained wheel from the fixed /opt layout
+bash scripts/make_pip_package_with_runtime.sh
+
+# Install & test
+pip install dist/lwrclpy-*.whl
+python3 examples/listener_string.py
+python3 examples/talker_string.py
+```
+
+This script **does not** rebuild DataTypes; it takes prebuilt bindings from `._types_python_build_v3/src` and packages them with the vendored Fast-DDS runtime from `/opt/fast-dds-v3`.
+
 ---
 
 ## 4) Troubleshooting (quick)
 
 - **`ModuleNotFoundError: No module named 'std_msgs'`**  
-  Re-run `bash scripts/install_ros_data_types.sh` (it ensures `PYTHONPATH` includes `/opt/fast-dds-v3-libs/python/src`).
+  Use Section 1 (wheel) or run `bash scripts/install_ros_data_types.sh` (Section 2.2).
 
-- **`ImportError: libBool.so: cannot open shared object file`**  
-  Re-run `bash scripts/install_ros_data_types.sh` (it collects symlinks into `/opt/fast-dds-v3-libs/lib` and exports `LD_LIBRARY_PATH`).
+- **`ImportError: libXxx.so: cannot open shared object file`**  
+  Section 1 (wheel) requires nothing else. For Section 2 (source build), rerun `install_ros_data_types.sh` to ensure `LD_LIBRARY_PATH` includes `/opt/fast-dds-v3-libs/lib` and all generated `lib*.so` are symlinked there.
 
-- **`AttributeError: module 'fastdds' has no attribute 'ReturnCode_t'`**  
-  Fast-DDS v3 uses module-level return code constants (e.g., `fastdds.RETCODE_OK`). The bundled `lwrclpy/subscription.py` already handles this.
+- **QoS enum differences**  
+  Fast-DDS v3 changes some names (`HistoryQosPolicyKind` → members on `fastdds`). The provided `lwrclpy/qos.py` already handles v3 safely.
 
-- **`AttributeError: '...PubSubType' object has no attribute 'getName'`**  
-  Fast-DDS v3 uses `get_name/set_name`. The bundled `lwrclpy/typesupport.py` is compatible with both styles.
+- **`ReturnCode_t` usage**  
+  In v3, return codes are exposed as module constants (`fastdds.RETCODE_OK` etc.). Our implementation uses the portable style.
 
----
-
-## 5) One-liner to (re)export env manually (if ever needed)
-
-```bash
-export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH; ADD_LD_DIRS="$(find /opt/fast-dds-v3-libs/python/src -type f -name 'lib*.so' -printf '%h\n' | sort -u | paste -sd: -)"; export LD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:${ADD_LD_DIRS}:$LD_LIBRARY_PATH; PY_SITE_PACK="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr ' ' :)"; [ -n "$PY_SITE_PACK" ] && export PYTHONPATH=${PY_SITE_PACK}:$PYTHONPATH
-```
+- **Network discovery / domain separation**  
+  If you need isolation from other DDS participants, set:  
+  `export LWRCL_DOMAIN_ID=<your-id>` (both talker and listener).
 
 ---
 
-## 6) License
+## 5) License
 
 - This repository: Apache-2.0  
-- Generated code includes portions derived from eProsima templates; please follow their licenses accordingly.
+- Generated code contains eProsima Fast-DDS templates; please follow their licenses as applicable.
