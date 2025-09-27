@@ -30,7 +30,7 @@ if [[ -z "${BUILD_ROOT}" || ! -d "${BUILD_ROOT}/src" ]]; then
   log "[FATAL] BUILD_ROOT not found. 指定例:"
   log "  BUILD_ROOT=/media/psf/Home/repos/lwrclpy/._types_python_build_v3 \\"
   log "    INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \\"
-  log "    bash scripts/install_python_types.sh"
+  log "    bash install_python_types.sh"
   exit 1
 fi
 log "[INFO] BUILD_ROOT=${BUILD_ROOT}"

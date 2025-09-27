@@ -41,7 +41,6 @@ sudo apt-get install -y --no-install-recommends \
 
 if ! dpkg -l | grep -qw openjdk-11-jre || ! dpkg -l | grep -qw openjdk-11-jdk; then
     sudo apt update
-    sudo apt purge -y openjdk-* default-jdk default-jre --autoremove
     sudo apt install -y openjdk-11-jre openjdk-11-jdk
 fi
 
@@ -54,6 +53,7 @@ need "${PYBIN}"
 
 # ===== ワークスペース & venv =====
 log "Preparing workspace at: ${WS}"
+rm -rf "${WS}"
 mkdir -p "${WS}/src"
 cd "${WS}"
 
@@ -67,9 +67,9 @@ python -m pip install -U colcon-common-extensions vcstool empy
 
 # ===== repos 取得 =====
 if [[ ! -f "${REPOS_FILE}" ]]; then
-  log "Fetching default repos file (Fast-DDS-python v2.3.0)…"
+  log "Fetching default repos file (Fast-DDS-python v2.2.0)…"
   curl -fsSL -o "${REPOS_FILE}" \
-    https://raw.githubusercontent.com/eProsima/Fast-DDS-python/v2.3.0/fastdds_python.repos
+    https://raw.githubusercontent.com/eProsima/Fast-DDS-python/v2.2.0/fastdds_python.repos
 fi
 [[ -f "${REPOS_FILE}" ]] || die "repos file not found: ${REPOS_FILE}"
 

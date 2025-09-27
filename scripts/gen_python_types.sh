@@ -17,8 +17,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROS_TYPES_ROOT="${ROS_TYPES_ROOT:-${ROOT_DIR}/third_party/ros-data-types-for-fastdds}"
 
 BUILD_ROOT="${BUILD_ROOT:-${ROOT_DIR}/._types_python_build_v3}"
-GEN_SRC_ROOT="${BUILD_ROOT}/src"           # ← 元の src/ をミラー
-INC_STAGE_ROOT="${BUILD_ROOT}/include/src" # ← .i/.hpp の参照をこのルートで解決
+GEN_SRC_ROOT="${BUILD_ROOT}/src" 
+INC_STAGE_ROOT="${BUILD_ROOT}/include/src"
 PATCH_PY="${PATCH_PY:-${SCRIPT_DIR}/patch_fastdds_swig_v3.py}"
 
 detect_cores(){ command -v nproc >/dev/null && nproc || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4; }
@@ -108,7 +108,7 @@ gen_one() {
   mkdir -p "${outdir}"
 
   echo "[GEN] ${rel} -> ${outdir}"
-  if ! "${FASTDDSGEN_BIN}" -python -cs -typeros2 \
+  if ! "${FASTDDSGEN_BIN}" -python -cs -typeros2 -language c++ \
         -d "${outdir}" \
         -I "${GEN_SRC_ROOT}" \
         -replace "${idl_path}" > "${outdir}/_gen.log" 2>&1; then
