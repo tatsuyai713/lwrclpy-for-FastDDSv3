@@ -1,11 +1,12 @@
 # lwrclpy — Zero-to-Run Guide (Fast DDS v3)
 
 **lwrclpy** is an rclpy-compatible Python library built **directly on Fast DDS v3**.  
-It is designed to remove the friction of using ROS 2 alongside modern Python ML/AI stacks by avoiding ROS 2's distro/ABI constraints while keeping familiar ROS-like APIs:
+It removes the friction of using ROS 2 alongside modern Python ML/AI stacks by avoiding ROS 2 distro/ABI constraints while keeping familiar ROS-like APIs:
 
 - ROS-style imports: `from std_msgs.msg import String`  
 - `Node / QoS / publisher / subscription / spin`  
 - Works in **any Ubuntu venv** with a single `pip install` when using the runtime‑bundled wheel.
+- **Interoperates on a ROS 2 network** via DDS/RTPS (see “Talk to ROS 2 nodes” below).
 
 > Tested on Ubuntu 24.04 with Python 3.12.
 
@@ -16,9 +17,10 @@ It is designed to remove the friction of using ROS 2 alongside modern Python ML/
 1. [Easiest: Use the prebuilt wheel](#1-easiest-use-the-prebuilt-wheel)  
 2. [Developer path: Build with scripts](#2-developer-path-build-everything-with-the-provided-scripts)  
 3. [ML Example: PyTorch + lwrclpy in a venv](#3-ml-example-pytorch--lwrclpy-in-a-venv)  
-4. [Rebuild the wheel (optional)](#4-rebuilding-the-wheel-yourself-optional)  
-5. [Troubleshooting](#5-troubleshooting-quick)  
-6. [License](#6-license)
+4. [Talk to ROS 2 nodes (interoperability)](#4-talk-to-ros-2-nodes-interoperability)  
+5. [Rebuild the wheel (optional)](#5-rebuilding-the-wheel-yourself-optional)  
+6. [Troubleshooting](#6-troubleshooting-quick)  
+7. [License](#7-license)
 
 ---
 
@@ -62,7 +64,6 @@ print("vendored fastdds:",
       os.path.exists(os.path.join(root, "_vendor", "fastdds", "_fastdds_python.so")))
 PY
 ```
-
 It should print `True` for “vendored fastdds”.
 
 ---
@@ -253,7 +254,45 @@ Listener output:
 
 ---
 
-## 4) Rebuilding the wheel yourself (optional)
+## 4) Talk to ROS 2 nodes (interoperability)
+
+**lwrclpy nodes participate in the same DDS/RTPS network as ROS 2 nodes**, so they can publish/subscribe the same topics and types.
+
+### Requirements
+- **Same domain**: set the same domain ID on both sides.  
+  - ROS 2 uses `ROS_DOMAIN_ID`; lwrclpy uses `LWRCL_DOMAIN_ID`.  
+  - Example (domain 0):  
+    ```bash
+    export ROS_DOMAIN_ID=0
+    export LWRCL_DOMAIN_ID=0
+    ```
+- **Same topic names** and **same message types** (e.g., `std_msgs/String`).
+- **Compatible QoS** (history depth, reliability, durability). The defaults in lwrclpy mirror common ROS 2 setups.
+- **Discovery allowed**: do not block UDP/RTPS ports (e.g., 7400+ range) at startup; discovery needs UDP even if payloads later use SHM.
+
+### Example: lwrclpy ↔ ROS 2
+- **Terminal A (ROS 2)** — run a standard ROS 2 listener on `chatter`:
+  ```bash
+  # Example: C++ listener (demo_nodes_cpp) or Python (demo_nodes_py)
+  ros2 run demo_nodes_cpp listener
+  # or
+  ros2 run demo_nodes_py listener
+  ```
+- **Terminal B (lwrclpy)** — run the talker from this repo:
+  ```bash
+  python3 examples/talker_string.py
+  ```
+
+You should see the ROS 2 listener printing messages sent by the lwrclpy talker. The reverse (ROS 2 talker → lwrclpy listener) works the same way.
+
+> Notes:
+> - Both Fast-DDS and CycloneDDS-based ROS 2 systems speak RTPS and can interoperate if types & QoS match.
+> - If you use SROS2 (security), make sure to either disable it or configure compatible permissions for lwrclpy.
+> - To confirm zero-copy (SHM) for intra-host transfer, see the “/dev/shm” checks in Troubleshooting.
+
+---
+
+## 5) Rebuilding the wheel yourself (optional)
 
 If you need to produce the wheel that bundles everything (used in Section 1), run:
 
@@ -270,12 +309,11 @@ pip install dist/lwrclpy-*.whl
 python3 examples/listener_string.py
 python3 examples/talker_string.py
 ```
-
 > This script **does not** rebuild DataTypes; it takes prebuilt bindings from `._types_python_build_v3/src` and packages them with the vendored Fast DDS runtime from `/opt/fast-dds-v3`.
 
 ---
 
-## 5) Troubleshooting (quick)
+## 6) Troubleshooting (quick)
 
 - **`ModuleNotFoundError: No module named 'std_msgs'`**  
   Use Section 1 (wheel) or run `bash scripts/install_ros_data_types.sh` (Section 2.2).
@@ -293,9 +331,12 @@ python3 examples/talker_string.py
   If you need isolation from other DDS participants, set:  
   `export LWRCL_DOMAIN_ID=<your-id>` (both talker and listener).
 
+- **Zero-copy verification**  
+  Discovery needs UDP; after discovery, data can use SHM. Check `/dev/shm` for `fastdds_*` segments and use `lsof -p <PID> | grep /dev/shm` to confirm both processes open them.
+
 ---
 
-## 6) License
+## 7) License
 
 - This repository: Apache-2.0  
 - Generated code contains eProsima Fast-DDS templates; please follow their licenses as applicable.
