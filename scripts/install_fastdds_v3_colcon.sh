@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Fast DDS v3 + fastddsgen + fastdds_python を colcon で /opt/fast-dds-v3 にインストール
-# 依存は fastdds_python.repos に準拠。Ubuntu 22.04/24.04 想定。
+# Install Fast DDS v3 core + fastddsgen + fastdds_python via colcon into /opt/fast-dds-v3.
+# Dependencies are aligned with fastdds_python.repos. Tested on Ubuntu 22.04/24.04.
 set -euo pipefail
 
-# ===== 既定設定 =====
-PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"      # colcon の install 先（v3 ランタイム）
-GEN_PREFIX="${GEN_PREFIX:-/opt/fast-dds-gen}"   # fastddsgen のインストール先
-WS="${WS:-$HOME/fastdds_python_ws}"             # colcon ワークスペース
+# ===== Defaults (override via env or CLI flags) =====
+PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"      # install/merge-install prefix for the v3 runtime
+GEN_PREFIX="${GEN_PREFIX:-/opt/fast-dds-gen}"   # installation prefix for fastddsgen launcher
+WS="${WS:-$HOME/fastdds_python_ws}"             # colcon workspace
 REPOS_FILE="${REPOS_FILE:-$WS/fastdds_python.repos}"
-PYBIN="${PYBIN:-python3}"                        # venv のベースにする Python
+PYBIN="${PYBIN:-python3}"                        # Python used to create the venv
 JOBS="${JOBS:-$(command -v nproc >/dev/null && nproc || echo 4)}"
 
-# ===== 任意引数 =====
+# ===== CLI flags =====
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --prefix-v3)   PREFIX_V3="$2"; shift 2;;
@@ -24,12 +24,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Pretty log helpers
 log(){ echo -e "\033[1;36m[INFO]\033[0m $*"; }
 warn(){ echo -e "\033[1;33m[WARN]\033[0m $*" >&2; }
 die(){ echo -e "\033[1;31m[FATAL]\033[0m $*" >&2; exit 1; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "'$1' not found"; }
 
-# ===== 依存導入 =====
+# ===== System dependencies (apt) =====
 log "Installing system dependencies (apt)…"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
@@ -39,19 +40,20 @@ sudo apt-get install -y --no-install-recommends \
   libasio-dev libtinyxml2-dev \
   cmake ninja-build python3-dev python3-pip
 
+# Java is required to build Fast-DDS-Gen (gradle)
 if ! dpkg -l | grep -qw openjdk-11-jre || ! dpkg -l | grep -qw openjdk-11-jdk; then
-    sudo apt update
-    sudo apt install -y openjdk-11-jre openjdk-11-jdk
+  sudo apt-get update
+  sudo apt-get install -y openjdk-11-jre openjdk-11-jdk
 fi
 
-# SWIG は 4.2 未満を推奨（4.1など）。
+# SWIG 4.1 is recommended (avoid 4.2+ unless you have patches)
 sudo apt-get install -y swig4.1 || true
 
 need git
 need curl
 need "${PYBIN}"
 
-# ===== ワークスペース & venv =====
+# ===== Workspace & virtualenv =====
 log "Preparing workspace at: ${WS}"
 rm -rf "${WS}"
 mkdir -p "${WS}/src"
@@ -64,8 +66,8 @@ source .venv/bin/activate
 python -m pip install -U pip wheel
 python -m pip install -U colcon-common-extensions vcstool empy
 
-
-# ===== repos 取得 =====
+# ===== Fetch repos (vcstool) =====
+# Use a pinned Fast-DDS-python repos file for reproducibility
 if [[ ! -f "${REPOS_FILE}" ]]; then
   log "Fetching default repos file (Fast-DDS-python v2.2.0)…"
   curl -fsSL -o "${REPOS_FILE}" \
@@ -76,7 +78,7 @@ fi
 log "Importing repos into src/…"
 vcs import --recursive src < "${REPOS_FILE}"
 
-# ===== fastddsgen (v3系) のビルド & インストール =====
+# ===== Build & install fastddsgen (Gradle) into ${GEN_PREFIX} =====
 GEN_SRC_DIR="$(find "${WS}/src" -maxdepth 2 -type d \( -iname 'fastddsgen' -o -iname 'Fast-DDS-Gen' \) | head -n 1 || true)"
 [[ -n "${GEN_SRC_DIR}" ]] || die "Fast-DDS-Gen repo not found under ${WS}/src (check your repos file)"
 log "Building fastddsgen from: ${GEN_SRC_DIR}"
@@ -86,11 +88,11 @@ pushd "${GEN_SRC_DIR}" >/dev/null
   sudo ./gradlew --no-daemon install --install_path="${GEN_PREFIX}"
 popd >/dev/null
 
-# PATH に追加（このシェル内）
+# Make fastddsgen available in PATH for this shell
 export PATH="${GEN_PREFIX}/bin:${PATH}"
 log "fastddsgen: $(command -v fastddsgen)"
 
-# ===== fastddsgen -python プローブ =====
+# ===== Probe fastddsgen -python (sanity check) =====
 log "Probing fastddsgen -python by real generation…"
 PROBE_DIR="$(mktemp -d)"
 trap 'rm -rf "${PROBE_DIR}"' EXIT
@@ -110,14 +112,14 @@ if [[ $RC -ne 0 ]] || ! find "${OUT_DIR}" -name '*.i' -print -quit | grep -q .; 
 fi
 log "fastddsgen -python OK (.i generated)"
 
-# ===== colcon で v3 スタック + fastdds_python を ${PREFIX_V3} にインストール =====
+# ===== Build the v3 stack + fastdds_python via colcon into ${PREFIX_V3} =====
 log "Building with colcon → install to ${PREFIX_V3}"
 sudo mkdir -p "${PREFIX_V3}"
 sudo chown "$(id -u)":"$(id -g)" "${PREFIX_V3}"
 
 PY_EXEC="$(command -v python)"
 
-# 重要: CMAKE_PREFIX_PATH と個別 DIR を明示（foonathan/fastcdr を fastdds から見えるように）
+# Important: expose foonathan_memory and fastcdr CMake config paths to Fast-DDS
 CMAKE_PREFIX_PATH="${PREFIX_V3}"
 FOONATHAN_DIR_CAND1="${PREFIX_V3}/lib/foonathan_memory/cmake"
 FOONATHAN_DIR_CAND2="${PREFIX_V3}/lib/cmake/foonathan_memory"
@@ -142,7 +144,7 @@ CMAKE_COMMON_ARGS=(
   -Dfastcdr_DIR="${FASTCDR_DIR}"
 )
 
-# colcon 実行
+# Build a minimal set of packages required to get fastdds_python working
 colcon build \
   --base-paths src \
   --merge-install \
@@ -153,28 +155,28 @@ colcon build \
   --packages-up-to fastdds_python fastdds foonathan_memory_vendor fastcdr \
   --parallel-workers "${JOBS}"
 
-# ===== エクスポート案内 =====
+# ===== Export instructions =====
 cat <<EOF
 
 ========================================
-✅ インストール完了
+✅ Installation completed
 
-# シェルに反映（~/.bashrc 等に追記推奨）
+# Add these to your shell (~/.bashrc recommended)
 export PATH=\$PATH:${GEN_PREFIX}/bin
 export CMAKE_PREFIX_PATH="${PREFIX_V3}:\$CMAKE_PREFIX_PATH"
 export LD_LIBRARY_PATH="${PREFIX_V3}/lib:${PREFIX_V3}/lib64:\$LD_LIBRARY_PATH"
-export PYTHONPATH="${PREFIX_V3}/lib/python$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:\$PYTHONPATH"
+export PYTHONPATH="${PREFIX_V3}/lib/python\$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:\$PYTHONPATH"
 
-# 動作確認
+# Quick sanity checks
 which fastddsgen && fastddsgen -version
 python - <<'PY'
 import fastdds
 print("[OK] fastdds Python available")
-print("KEEP_* symbols:", [n for n in dir(fastdds) if "KEEP" in n][:6], "...")
+print("KEEP_* symbols:", [n for n in dir(fastdds) if "KEEP" in n][:6], "…")
 PY
 
-# 再ビルド例（依存やオプションを変えたとき）
+# Rebuild example if you change options/deps:
 #   source ${WS}/.venv/bin/activate
-#   colcon build --merge-install --install-base "${PREFIX_V3}" --cmake-args "${CMAKE_COMMON_ARGS[@]}"
+#   colcon build --merge-install --install-base "${PREFIX_V3}" --cmake-args ${CMAKE_COMMON_ARGS[@]}
 ========================================
 EOF

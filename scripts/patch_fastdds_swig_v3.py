@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Fast DDS v3 の SWIG .i に、必要最小限の追記を順序固定・重複回避で入れる
-# ポイント:
-#  - SWIG には SerializedPayload_t の「前方宣言」だけ与える（%inline）
-#  - C++ 実体は %{ %} に本物のヘッダを include（再定義しない）
-#  - 必要マクロを %{ %} 側で #ifndef ガード付きで定義
-#  - 追記は helper includes（std_*.i/typemaps.i）直後に限定
+# Patch helper for Fast DDS v3 SWIG interface (.i) files.
+# Goals (minimal, ordered, idempotent):
+#   - Provide only a *forward declaration* of SerializedPayload_t to SWIG via %inline.
+#   - Include the real C++ headers inside the %{ %} block (no redefinitions on the SWIG side).
+#   - Define required macros in the %{ %} block with #ifndef guards.
+#   - Insert additions right after the helper includes (std_*.i / typemaps.i), keeping order stable.
 
 import sys, io, re
 
@@ -18,12 +18,14 @@ txt = io.open(path, "r", encoding="utf-8").read()
 orig = txt
 
 def add_after_anchor(lines):
+    """Insert given lines once (skip if already present) right after the last helper %include."""
     global txt
-    # helper includes の最後をアンカーにする
+    # Anchor: last occurrence among helper includes (std_*.i / typemaps.i / stdint.i).
     it = list(re.finditer(r'(?m)^\s*%include\s+"(?:std_[a-z]+\.i|typemaps\.i|stdint\.i)"\s*$', txt))
     if it:
         ins = it[-1].end()
     else:
+        # Fallback: right after %module if helpers are not found.
         m = re.search(r'(?m)^\s*%module[^\n]*\n', txt)
         ins = m.end() if m else 0
     block = ""
@@ -33,13 +35,13 @@ def add_after_anchor(lines):
     if block:
         txt = txt[:ins] + "\n" + block + txt[ins:]
 
-# 1) C++ 挿入ブロック %{ %} を確保
+# 1) Ensure we have a C++ insertion block %{ %}.
 if '%{' not in txt:
     m = re.search(r'(?m)^\s*%module[^\n]*\n', txt)
     pos = m.end() if m else 0
     txt = txt[:pos] + "%{\n%}\n" + txt[pos:]
 
-# 2) %{ %} 内にマクロ定義と本物のヘッダを一度だけ入れる
+# 2) In the %{ %} block, add macro guards and real C++ headers (once).
 cpp_snippet = r"""/* __FASTDDS_V3_CPP_BLOCK__ */
 #ifndef FASTDDS_EXPORTED_API
 #define FASTDDS_EXPORTED_API
@@ -55,8 +57,8 @@ using eprosima::fastdds::rtps::octet;
 if "/* __FASTDDS_V3_CPP_BLOCK__ */" not in txt:
     txt = re.sub(r'%\}', cpp_snippet + r'\n%}', txt, count=1)
 
-# 3) SWIG 側（パーサ用）には「前方宣言」だけを与える（再定義を避ける）
-#    ※ %inline は SWIG に型名を知らせつつ、C++ 的には前方宣言なので多重定義にならない
+# 3) For SWIG parsing, expose only a *forward declaration* (avoid redefinition in the .i).
+#    %inline informs SWIG of the type name; the actual definition comes from the real headers above.
 fwd_decl = r"""%inline %{
 namespace eprosima { namespace fastdds { namespace rtps {
     struct SerializedPayload_t;
@@ -65,7 +67,7 @@ namespace eprosima { namespace fastdds { namespace rtps {
 if "struct SerializedPayload_t;" not in txt:
     add_after_anchor([fwd_decl])
 
-# 4) SWIG helper の不足分（fastcdr/config など）を helper 群の直後にだけ追加
+# 4) Add missing SWIG helper imports (right after helper includes only).
 add_after_anchor([
     '%include <fastcdr/config.h>',
     '%import(module="fastdds") "fastdds/dds/core/LoanableCollection.hpp"',
@@ -73,12 +75,13 @@ add_after_anchor([
     '%import(module="fastdds") "fastdds/dds/core/LoanableSequence.hpp"',
     '%import(module="fastdds") "fastdds/rtps/common/Types.hpp"',
     '%import(module="fastdds") "fastdds/rtps/history/IPayloadPool.hpp"',
-    # ここで C++ ヘッダの %include はしない（SWIG 再定義を避ける）
+    # Do NOT %include the C++ headers here to avoid SWIG-side redefinitions.
     '%include "stdint.i"',
     '%apply unsigned int { eprosima::fastdds::dds::DataRepresentationId_t };',
 ])
 
-# 5) %extend（未挿入なら追加）。SWIG は前方宣言で型を認識、実体は C++ 側ヘッダで解決
+# 5) Add %extend for SerializedPayload_t if not already present.
+#    SWIG sees the type via the forward declaration; the definition is provided by the real headers.
 if not re.search(r'%extend\s+eprosima::fastdds::rtps::SerializedPayload_t', txt):
     extend = r"""
 %extend eprosima::fastdds::rtps::SerializedPayload_t
@@ -97,15 +100,15 @@ if not re.search(r'%extend\s+eprosima::fastdds::rtps::SerializedPayload_t', txt)
     }
 }
 """
-    # 可能なら最初の %include "*.hpp" の直前に、なければ末尾へ
+    # Prefer inserting before the first %include "*.hpp" if present, otherwise append.
     m = re.search(r'(?m)^\s*%include\s+".+?\.hpp"\s*$', txt)
     if m:
         txt = txt[:m.start()] + extend + "\n" + txt[m.start():]
     else:
         txt = txt.rstrip() + "\n" + extend + "\n"
 
-# 6) 既に混入している誤った再定義パターンを掃除（安全な範囲で）
-#    SWIG の出力を壊すような「struct SerializedPayload_t { … }」を .i に置いてしまっている場合は除去
+# 6) Clean up any known bad redefinition blocks (safe pattern).
+#    E.g., if someone injected a hand-written "struct SerializedPayload_t { … }" block into the .i, remove it.
 txt = re.sub(
     r'(?s)/\* *SWIG-generated SerializedPayload_t start *\*/.*?/\* *SWIG-generated SerializedPayload_t end *\*/',
     '', txt

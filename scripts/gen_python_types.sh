@@ -1,32 +1,35 @@
 #!/usr/bin/env bash
 # gen_python_types.sh (Fast DDS v3 + fastddsgen 4.x)
-# 1) IDL ツリーを BUILD_ROOT/src に構成維持コピー
-# 2) 各 IDL を「同じディレクトリ直下の <TypeName>/」へ -python 生成（構成維持）
-# 3) 生成ディレクトリごとに .i を v3 用パッチ（重複回避）
-# 4) CMakeLists に include ディレクトリと SWIG -I を必ず追加
-# 5) 各ディレクトリを個別ビルド
+# Pipeline overview:
+#   1) Mirror the IDL tree into BUILD_ROOT/src while preserving structure.
+#   2) For each IDL, generate Python bindings into a sibling "<TypeName>/" dir (structure-preserving).
+#   3) Patch the generated SWIG .i for Fast DDS v3 (idempotent).
+#   4) Ensure CMakeLists.txt adds include dirs and SWIG -I (so cross-type includes resolve).
+#   5) Build each generated directory independently.
 
 set -euo pipefail
 
-# ===== ユーザ調整可 =====
-PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"
-FASTDDSGEN_BIN="${FASTDDSGEN_BIN:-/opt/fast-dds-gen/bin/fastddsgen}"
+# ===== User-tunable settings =====
+PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"                   # Fast-DDS v3 install prefix (CMake packages live here)
+FASTDDSGEN_BIN="${FASTDDSGEN_BIN:-/opt/fast-dds-gen-v3/bin/fastddsgen}"  # fastddsgen v4.x launcher
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROS_TYPES_ROOT="${ROS_TYPES_ROOT:-${ROOT_DIR}/third_party/ros-data-types-for-fastdds}"
 
 BUILD_ROOT="${BUILD_ROOT:-${ROOT_DIR}/._types_python_build_v3}"
-GEN_SRC_ROOT="${BUILD_ROOT}/src" 
-INC_STAGE_ROOT="${BUILD_ROOT}/include/src"
-PATCH_PY="${PATCH_PY:-${SCRIPT_DIR}/patch_fastdds_swig_v3.py}"
+GEN_SRC_ROOT="${BUILD_ROOT}/src"            # Where the mirrored IDL tree will live
+INC_STAGE_ROOT="${BUILD_ROOT}/include/src"  # Staging for .i/.hpp to be included by other generated types
+PATCH_PY="${PATCH_PY:-${SCRIPT_DIR}/patch_fastdds_swig_v3.py}"  # SWIG .i patcher adapted for v3
 
+# Worker count (portable detection)
 detect_cores(){ command -v nproc >/dev/null && nproc || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4; }
 JOBS="${JOBS:-$(detect_cores)}"
 
+# Simple command presence check
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "[FATAL] '$1' not found" >&2; exit 1; }; }
 
-# ===== 前提チェック =====
+# ===== Prerequisites =====
 need cmake
 need swig
 need python3
@@ -37,7 +40,8 @@ need java
 
 mkdir -p "${BUILD_ROOT}" "${GEN_SRC_ROOT}" "${INC_STAGE_ROOT}"
 
-# ===== fastdds / fastcdr CMake Config の自動検出 =====
+# ===== Auto-detect CMake package dirs for fastdds / fastcdr =====
+# Looks in common locations under PREFIX_V3. Keeps code paths portable across distros.
 autodetect_pkg_dir() {
   local prefix="$1" pkg="$2" cand
   cand="$(find "${prefix}/share/${pkg}/cmake" -maxdepth 1 -name "${pkg}-config.cmake" -print -quit 2>/dev/null || true)"
@@ -55,17 +59,17 @@ if ! FASTCDR_CMAKE_DIR="$(autodetect_pkg_dir "${PREFIX_V3}" fastcdr)"; then
 echo "[INFO] fastdds_DIR=${FASTDDS_CMAKE_DIR}"
 echo "[INFO] fastcdr_DIR=${FASTCDR_CMAKE_DIR}"
 
-# ===== IDL ツリーを構成維持でコピー =====
+# ===== Mirror the IDL tree into GEN_SRC_ROOT (structure-preserving) =====
 echo "[INFO] Mirroring IDL tree → ${GEN_SRC_ROOT}"
 rsync -a --delete "${ROS_TYPES_ROOT}/src/" "${GEN_SRC_ROOT}/"
 
-# 予約語 FIXED 対応（gazebo_msgs のみ、コピー側だけ）
+# Workaround for reserved word 'FIXED' in gazebo_msgs: rename to '_FIXED' only in the mirrored copy
 mapfile -t GZ_IDLS < <(find "${GEN_SRC_ROOT}/gazebo_msgs" -type f -name "*.idl" 2>/dev/null || true)
 for f in "${GZ_IDLS[@]}"; do
   sed -i -E 's/(^|[^A-Za-z0-9_])FIXED([^A-Za-z0-9_])/\1_FIXED\2/g' "$f" || true
 done
 
-# ===== IDL 一覧 =====
+# ===== Enumerate IDL files (optional FILTER=… to limit the scope) =====
 if [[ -n "${FILTER:-}" ]]; then
   mapfile -t IDLS < <(find "${GEN_SRC_ROOT}" -type f -name "*.idl" | sed "s|^${GEN_SRC_ROOT}/||" | grep -i "${FILTER}" | sort)
 else
@@ -73,10 +77,10 @@ else
 fi
 [[ ${#IDLS[@]} -gt 0 ]] || { echo "[ERR] No IDL files (FILTER='${FILTER:-}')"; exit 1; }
 
-# ===== CMakeLists に include を必ず通す =====
+# ===== Ensure CMakeLists includes our staging include paths (so SWIG/C++ can find sibling types) =====
 patch_cmakelists_min() {
-  local dir="$1"      # .../src/<pkg>/<ns>/<Type>
-  local dir_rel="$2"  # <pkg>/<ns>
+  local dir="$1"      # e.g. .../src/<pkg>/<ns>/<Type>
+  local dir_rel="$2"  # e.g. <pkg>/<ns>
   local cml="${dir}/CMakeLists.txt"
   [[ -f "$cml" ]] || return 0
   if ! grep -q "__FASTDDS_INC_STAGE_ADDED__" "$cml"; then
@@ -94,25 +98,26 @@ patch_cmakelists_min() {
   fi
 }
 
-# ===== 1件生成 → パッチ → ステージング =====
+# ===== Generate → Patch → Stage includes for each IDL =====
 FAILED_GEN=()
 
 gen_one() {
-  local rel="$1"                               # 例) builtin_interfaces/msg/Time.idl
+  local rel="$1"                               # e.g. builtin_interfaces/msg/Time.idl
   local idl_path="${GEN_SRC_ROOT}/${rel}"
-  local dir_rel="$(dirname "${rel}")"          # builtin_interfaces/msg
-  local base="$(basename "${rel}" .idl)"       # Time
-  local outdir="${GEN_SRC_ROOT}/${dir_rel}/${base}"  # src/builtin_interfaces/msg/Time/…
+  local dir_rel="$(dirname "${rel}")"          # e.g. builtin_interfaces/msg
+  local base="$(basename "${rel}" .idl)"       # e.g. Time
+  local outdir="${GEN_SRC_ROOT}/${dir_rel}/${base}"  # e.g. src/builtin_interfaces/msg/Time/…
 
   rm -rf "${outdir}"
   mkdir -p "${outdir}"
 
   echo "[GEN] ${rel} -> ${outdir}"
+  # -cs: generate TypeObject support; -typeros2: ROS2-friendly types; -language c++
   if ! "${FASTDDSGEN_BIN}" -python -cs -typeros2 -language c++ \
         -d "${outdir}" \
         -I "${GEN_SRC_ROOT}" \
         -replace "${idl_path}" > "${outdir}/_gen.log" 2>&1; then
-    echo "[ERR]  fastddsgen failed: ${rel}（ログ: ${outdir}/_gen.log 先頭）"
+    echo "[ERR]  fastddsgen failed: ${rel} (see ${outdir}/_gen.log head)"
     sed -n '1,120p' "${outdir}/_gen.log" || true
     FAILED_GEN+=("${rel}")
     return
@@ -122,13 +127,14 @@ gen_one() {
   echo "[PATCH.i] ${rel}"
   python3 "${PATCH_PY}" "${outdir}/${base}.i"
 
-  # 参照解決用に .i/.hpp を構成維持でステージ
+  # Stage includes (.i/.hpp/TypeObjectSupport/PubSubTypes) into a central include tree
   local inc_dst_dir="${INC_STAGE_ROOT}/${dir_rel}"
   mkdir -p "${inc_dst_dir}"
   find "${outdir}" -maxdepth 1 -type f \
     \( -name '*.i' -o -name '*.hpp' -o -name '*TypeObjectSupport.*' -o -name '*PubSubTypes.*' \) \
     -exec cp -f {} "${inc_dst_dir}/" \;
 
+  # Ensure each generated CMakeLists sees the staging includes
   patch_cmakelists_min "${outdir}" "${dir_rel}"
 }
 
@@ -137,11 +143,11 @@ for rel in "${IDLS[@]}"; do
 done
 
 if [[ ${#FAILED_GEN[@]} -gt 0 ]]; then
-  echo "[WARN] fastddsgen 失敗: ${#FAILED_GEN[@]} 件（生成できた分のみビルド続行）"
+  echo "[WARN] fastddsgen failed on ${#FAILED_GEN[@]} file(s); continuing with remaining builds"
   printf ' - %s\n' "${FAILED_GEN[@]}"
 fi
 
-# ===== ビルド =====
+# ===== Build all generated packages =====
 echo "[INFO] Building each generated package…"
 FAILED_BUILD=()
 
@@ -171,8 +177,10 @@ build_one() {
   popd >/dev/null
 }
 
+# Discover all generated leaf dirs that own a CMakeLists.txt
 mapfile -t OUTDIRS < <(find "${GEN_SRC_ROOT}" -mindepth 4 -maxdepth 4 -type f -name CMakeLists.txt -printf '%h\n' | sort -u)
 for d in "${OUTDIRS[@]}"; do
+  # Skip those with explicit generator error markers
   [[ -f "${d}/_gen.log" ]] && grep -q "ERROR" "${d}/_gen.log" && continue
   build_one "${d}"
 done
