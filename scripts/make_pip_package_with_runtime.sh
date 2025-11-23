@@ -165,43 +165,54 @@ else
   echo "[WARN] patchelf not found; relying on ctypes preload only."
 fi
 
-# ========= 7) Make wheel metadata =========
+# ========= 7) Make wheel metadata (platform-specific via bdist_wheel) =========
 echo "[INFO] Writing packaging metadata…"
+
+# PEP 517 backend: use legacy mode so setup.py is honored (bdist_wheel etc.)
 cat > "${STAGING_ROOT}/pyproject.toml" <<PYPROJECT
 [build-system]
 requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "${PKG_NAME}"
-version = "${PKG_VERSION}"
-description = "lwrclpy with vendored Fast-DDS v3 runtime (fixed /opt layout) and ROS message bindings"
-readme = { text = "Wheel bundles Fast-DDS runtime (fastdds package incl. _fastdds_python.so), native libs, and lwrclpy.", content-type = "text/plain" }
-authors = [{ name = "Your Org" }]
-requires-python = ">=3.8"
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: Apache Software License",
-  "Operating System :: POSIX :: Linux",
-]
-
-[tool.setuptools]
-packages = { find = { where = ["."] } }
-
-[tool.setuptools.package-data]
-# Include ALL .so files, not only lib*.so
-"*" = ["**/*.py", "**/*Wrapper.*", "**/*.so"]
+build-backend = "setuptools.build_meta:__legacy__"
 PYPROJECT
 
-cat > "${STAGING_ROOT}/setup.cfg" <<'SETUPCFG'
+# setup.cfg: metadata & package_data
+cat > "${STAGING_ROOT}/setup.cfg" <<PYSETUPCFG
+[metadata]
+name = ${PKG_NAME}
+version = ${PKG_VERSION}
+description = lwrclpy with vendored Fast-DDS v3 runtime (fixed /opt layout) and ROS message bindings
+long_description = Wheel bundles Fast-DDS runtime (fastdds package incl. _fastdds_python.so), native libs, and lwrclpy.
+long_description_content_type = text/plain
+author = Your Org
+
 [options]
+packages = find:
+python_requires = >=3.8
 include_package_data = True
 zip_safe = False
 
 [options.package_data]
 # Include ALL .so files, not only lib*.so
 * = **/*.py, **/*Wrapper.*, **/*.so
-SETUPCFG
+PYSETUPCFG
+
+# setup.py: force has_ext_modules() to True so wheel is NOT treated as pure-python
+# → bdist_wheel will treat it as platform-specific and automatically choose
+#    the correct platform tag (e.g., linux_aarch64, linux_x86_64) based on
+#    the current Python's sysconfig.get_platform().
+cat > "${STAGING_ROOT}/setup.py" <<'PYSETUP'
+from setuptools import setup
+from setuptools.dist import Distribution
+
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        # We ship .so as package_data, but tell setuptools this is a binary dist.
+        # This makes the wheel platform-specific instead of py3-none-any.
+        return True
+
+if __name__ == "__main__":
+    setup(distclass=BinaryDistribution)
+PYSETUP
 
 echo "[INFO] Ensuring 'build' module…"
 python3 - <<'PY'
