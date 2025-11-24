@@ -12,7 +12,14 @@ _lock = threading.RLock()
 _initialized = False
 _shutdown = False
 _participant = None
-_domain = int(os.environ.get("LWRCL_DOMAIN_ID", "0"))
+_domain_env = os.environ.get("LWRCL_DOMAIN_ID")
+# ROS 2 互換：ROS_DOMAIN_ID をフォールバックに使う
+if _domain_env is None:
+    _domain_env = os.environ.get("ROS_DOMAIN_ID")
+try:
+    _domain = int(_domain_env) if _domain_env is not None else 0
+except ValueError:
+    _domain = 0
 
 
 def init(args=None):

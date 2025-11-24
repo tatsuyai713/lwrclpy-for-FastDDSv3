@@ -1,12 +1,11 @@
 # lwrclpy/subscription.py
-# Zero-copy–friendly DataReader wrapper for Fast DDS v3.
-# - Prefer DDS internal zero-copy (DataSharing) where available.
-# - Bind listener either via set_listener() or at creation time (API differences).
-# - Absorb v2/v3 return code differences.
+# DDS DataReader wrapper that enqueues received samples for executor-driven callbacks.
+# Implements copy according to fastddsgen-generated getter/setter conventions.
 
 from __future__ import annotations
 import fastdds  # type: ignore
 from .qos import QoSProfile
+from .message_utils import clone_message
 
 
 def _retcode_is_ok(rc) -> bool:
@@ -39,11 +38,12 @@ def _force_data_sharing_on_reader(rq: "fastdds.DataReaderQos") -> None:
 
 
 class _ReaderListener(fastdds.DataReaderListener):
-    """Simple listener that converts 'on_data_available' into Python callback."""
+    """Listener that enqueues callbacks to the executor queue."""
 
-    def __init__(self, on_msg, msg_ctor):
+    def __init__(self, enqueue_cb, user_cb, msg_ctor):
         super().__init__()
-        self._on_msg = on_msg
+        self._enqueue_cb = enqueue_cb
+        self._user_cb = user_cb
         self._msg_ctor = msg_ctor
 
     def on_data_available(self, reader):
@@ -58,18 +58,17 @@ class _ReaderListener(fastdds.DataReaderListener):
         except Exception:
             return  # Avoid director double-fault
 
-        if _retcode_is_ok(rc) and getattr(info, "valid_data", True):
-            try:
-                self._on_msg(data)
-            except Exception:
-                # Swallow user exceptions to avoid aborting DDS thread.
-                return
+        if getattr(info, "valid_data", True) and _retcode_is_ok(rc):
+            # Enqueue the callback to be run by the executor
+            cloned = clone_message(data, self._msg_ctor)
+            self._enqueue_cb(self._user_cb, cloned)
 
 
 class Subscription:
-    """Subscription managing Subscriber/DataReader with zero-copy friendly QoS."""
+    """Subscription managing Subscriber/DataReader with zero-copy friendly QoS.
+    コールバックは DDS リスナーで受信し、Executor にキューイングする。"""
 
-    def __init__(self, participant, topic, qos: QoSProfile, callback, msg_ctor):
+    def __init__(self, participant, topic, qos: QoSProfile, callback, msg_ctor, enqueue_cb):
         self._participant = participant
         self._topic = topic
         self._callback = callback
@@ -91,22 +90,18 @@ class Subscription:
         _force_data_sharing_on_reader(rq)
         # <<<
 
-        # Listener
-        self._listener = _ReaderListener(callback, msg_ctor)
+        # Listener enqueue to executor queue
+        self._listener = _ReaderListener(enqueue_cb, callback, msg_ctor)
 
-        # Create DataReader and attach listener (API differs across bindings)
+        # Create DataReader with listener
         reader = None
         try:
-            # Newer API often supports passing the listener on creation.
             reader = self._subscriber.create_datareader(self._topic, rq, self._listener)
         except TypeError:
-            # Fallback to creation without listener, then set it.
             reader = self._subscriber.create_datareader(self._topic, rq)
             try:
                 reader.set_listener(self._listener)
             except AttributeError:
-                # Some very old bindings may not expose set_listener at all.
-                # In that case the reader will work without callbacks (polling would be needed).
                 pass
 
         if reader is None:
@@ -127,3 +122,9 @@ class Subscription:
             except Exception:
                 pass
             self._subscriber = None
+
+    def get_topic_name(self) -> str:
+        try:
+            return self._topic.get_name()
+        except Exception:
+            return getattr(self._topic, "m_topicName", "")

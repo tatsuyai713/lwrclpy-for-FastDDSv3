@@ -79,3 +79,36 @@ class QoSProfile:
             pass
         rq.reliability().kind = self.reliability.value
         rq.durability().kind = self.durability.value
+
+    # ---- Convenience constructors (rclpy-like) --------------------
+    @classmethod
+    def keep_last(cls, depth: int) -> "QoSProfile":
+        return cls(depth=depth, history=HistoryPolicy.KEEP_LAST)
+
+    @classmethod
+    def keep_all(cls) -> "QoSProfile":
+        return cls(depth=0, history=HistoryPolicy.KEEP_ALL)
+
+    @classmethod
+    def sensor_data(cls) -> "QoSProfile":
+        # Mirrors ROS2 SensorData QoS (best-effort, volatile, depth=5)
+        return cls(
+            depth=5,
+            history=HistoryPolicy.KEEP_LAST,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
+    @classmethod
+    def system_default(cls) -> "QoSProfile":
+        return cls()
+
+    @classmethod
+    def parameters(cls) -> "QoSProfile":
+        # ROS2 parameters usually use reliable/volatile keep last depth 1000
+        return cls(depth=1000)
+
+    @classmethod
+    def services_default(cls) -> "QoSProfile":
+        # Services default to reliable/volatile keep last depth 10
+        return cls(depth=10)

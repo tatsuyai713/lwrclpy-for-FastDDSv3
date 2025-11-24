@@ -8,6 +8,8 @@ It removes the friction of using ROS 2 alongside modern Python ML/AI stacks by a
 - Works in **any Ubuntu venv** with a single `pip install` when using the runtime‑bundled wheel.
 - **Interoperates on a ROS 2 network** via DDS/RTPS (see “Talk to ROS 2 nodes” below).
 
+Message fields can be set either with ROS 2-style setters (`msg.data("hi")`) or plain attribute assignment (`msg.data = "hi"`); lwrclpy clones messages on publish/receive to keep both styles usable.
+
 > Tested on Ubuntu 24.04 with Python 3.12.
 
 ---
@@ -38,10 +40,10 @@ pip install dist/lwrclpy-*.whl
 
 # 3) Run the examples (two terminals)
 # Terminal A (listener)
-python3 examples/listener_string.py
+python3 examples/pubsub/string/listener.py
 
 # Terminal B (talker)
-python3 examples/talker_string.py
+python3 examples/pubsub/string/talker.py
 ```
 
 What the wheel includes:
@@ -118,12 +120,12 @@ Open two terminals:
 
 **Terminal A (listener):**
 ```bash
-python3 examples/listener_string.py
+python3 examples/pubsub/string/listener.py
 ```
 
 **Terminal B (talker):**
 ```bash
-python3 examples/talker_string.py
+python3 examples/pubsub/string/talker.py
 ```
 
 Expected output on the listener:
@@ -280,7 +282,7 @@ Listener output:
   ```
 - **Terminal B (lwrclpy)** — run the talker from this repo:
   ```bash
-  python3 examples/talker_string.py
+  python3 examples/pubsub/string/talker.py
   ```
 
 You should see the ROS 2 listener printing messages sent by the lwrclpy talker. The reverse (ROS 2 talker → lwrclpy listener) works the same way.
@@ -306,8 +308,8 @@ bash scripts/make_pip_package_with_runtime.sh
 
 # Install & test
 pip install dist/lwrclpy-*.whl
-python3 examples/listener_string.py
-python3 examples/talker_string.py
+python3 examples/pubsub/string/listener.py
+python3 examples/pubsub/string/talker.py
 ```
 > This script **does not** rebuild DataTypes; it takes prebuilt bindings from `._types_python_build_v3/src` and packages them with the vendored Fast DDS runtime from `/opt/fast-dds-v3`.
 

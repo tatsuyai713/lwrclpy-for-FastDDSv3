@@ -6,6 +6,7 @@
 from __future__ import annotations
 import fastdds  # type: ignore
 from .qos import QoSProfile
+from .message_utils import clone_message
 
 
 def _force_data_sharing_on_writer(wq: "fastdds.DataWriterQos") -> None:
@@ -26,9 +27,10 @@ def _force_data_sharing_on_writer(wq: "fastdds.DataWriterQos") -> None:
 class Publisher:
     """Publisher managing Publisher/DataWriter with zero-copy friendly QoS."""
 
-    def __init__(self, participant, topic, qos: QoSProfile):
+    def __init__(self, participant, topic, qos: QoSProfile, msg_ctor=None):
         self._participant = participant
         self._topic = topic
+        self._msg_ctor = msg_ctor
 
         # Create Publisher
         pub_qos = fastdds.PublisherQos()
@@ -53,7 +55,13 @@ class Publisher:
 
     def publish(self, msg) -> None:
         """Publish a message instance generated from the SWIG type."""
-        self._writer.write(msg)
+        to_send = msg
+        try:
+            target_ctor = self._msg_ctor if self._msg_ctor is not None and isinstance(msg, self._msg_ctor) else msg.__class__
+            to_send = clone_message(msg, target_ctor)
+        except Exception:
+            to_send = msg  # fall back to original on failure
+        self._writer.write(to_send)
 
     def destroy(self) -> None:
         """Tear down DataWriter/Publisher in the right order, swallowing errors."""

@@ -41,6 +41,96 @@ def resolve_generated_type(obj):
     return mod, msg_cls, pubsub_cls
 
 
+def resolve_service_type(obj):
+    """
+    推定ルール:
+      - rclpy 互換: <Srv>.Request / <Srv>.Response を持つ
+      - fastddsgen 出力: <Srv>_request / <Srv>_response などがモジュールに居る
+    戻り値: (request_cls, response_cls, request_pubsub_cls, response_pubsub_cls)
+    """
+    mod = None
+    # rclpy スタイルのクラス (Request/Response 属性)
+    if isinstance(obj, type):
+        mod = importlib.import_module(obj.__module__)
+        req = getattr(obj, "Request", None)
+        res = getattr(obj, "Response", None)
+    else:
+        mod = importlib.import_module(obj.__module__)
+        req = getattr(obj, "Request", None)
+        res = getattr(obj, "Response", None)
+    # fastddsgen 名寄せ (Foo_Request / Foo_Response)
+    if req is None:
+        req = getattr(mod, f"{obj.__name__}Request", None) if isinstance(obj, type) else None
+    if res is None:
+        res = getattr(mod, f"{obj.__name__}Response", None) if isinstance(obj, type) else None
+
+    # fallback: scan module for *Request/*Response
+    if req is None or res is None:
+        for name in dir(mod):
+            if req is None and name.lower().endswith("request"):
+                cand = getattr(mod, name)
+                if isinstance(cand, type):
+                    req = cand
+            if res is None and name.lower().endswith("response"):
+                cand = getattr(mod, name)
+                if isinstance(cand, type):
+                    res = cand
+    if req is None or res is None:
+        raise RuntimeError("Could not resolve service Request/Response classes")
+
+    _mod, req_cls, req_pubsub = resolve_generated_type(req)
+    _mod, res_cls, res_pubsub = resolve_generated_type(res)
+    return req_cls, res_cls, req_pubsub, res_pubsub
+
+
+def resolve_action_type(action_type):
+    """
+    Resolve ROS2-style action generated classes.
+    Expects attributes: Goal, Result, Feedback,
+      SendGoal (with Request/Response),
+      GetResult (with Request/Response),
+      FeedbackMessage,
+      CancelGoal (action_msgs/srv/CancelGoal)
+    """
+    goal_cls = getattr(action_type, "Goal", None)
+    result_cls = getattr(action_type, "Result", None)
+    feedback_cls = getattr(action_type, "Feedback", None)
+    send_goal = getattr(action_type, "SendGoal", None)
+    get_result = getattr(action_type, "GetResult", None)
+    feedback_msg_cls = getattr(action_type, "FeedbackMessage", None)
+    cancel_srv = getattr(action_type, "CancelGoal", None)
+
+    if not all([goal_cls, result_cls, feedback_cls, send_goal, get_result, feedback_msg_cls]):
+        raise RuntimeError("Action type missing required nested classes (Goal/Result/Feedback/SendGoal/GetResult/FeedbackMessage)")
+
+    send_goal_req = getattr(send_goal, "Request", None)
+    send_goal_res = getattr(send_goal, "Response", None)
+    get_result_req = getattr(get_result, "Request", None)
+    get_result_res = getattr(get_result, "Response", None)
+    if not all([send_goal_req, send_goal_res, get_result_req, get_result_res]):
+        raise RuntimeError("Action SendGoal/GetResult missing Request/Response")
+
+    if cancel_srv is None:
+        raise RuntimeError("Action type missing CancelGoal definition")
+    cancel_req = getattr(cancel_srv, "Request", None)
+    cancel_res = getattr(cancel_srv, "Response", None)
+    if not all([cancel_req, cancel_res]):
+        raise RuntimeError("CancelGoal missing Request/Response")
+
+    return {
+        "goal": goal_cls,
+        "result": result_cls,
+        "feedback": feedback_cls,
+        "send_goal_req": send_goal_req,
+        "send_goal_res": send_goal_res,
+        "get_result_req": get_result_req,
+        "get_result_res": get_result_res,
+        "feedback_msg": feedback_msg_cls,
+        "cancel_req": cancel_req,
+        "cancel_res": cancel_res,
+    }
+
+
 def _find_first_pubsub(mod, prefer: str | None = None):
     # <Name>PubSubType を優先
     if prefer:
@@ -69,3 +159,39 @@ def _pair_from_module(mod):
         if isinstance(obj, type) and not n.endswith("PubSubType"):
             return pubsub, obj
     return pubsub, None
+
+
+def get_or_create_topic(participant, name: str, type_name: str):
+    """
+    Reuse an existing Topic on the participant when the name is already registered.
+    Returns (topic, owned) where owned=False means an existing Topic was reused.
+    """
+    import fastdds  # local import to avoid mandatory dependency at import-time
+
+    # Try to reuse an existing Topic first
+    try:
+        desc = participant.lookup_topicdescription(name)
+    except Exception:
+        desc = None
+    if desc is not None:
+        try:
+            existing_type = None
+            if hasattr(desc, "get_type_name"):
+                existing_type = desc.get_type_name()
+            elif hasattr(desc, "getTopicDataType"):
+                existing_type = desc.getTopicDataType()
+            if existing_type and existing_type != type_name:
+                raise RuntimeError(
+                    f"Topic '{name}' already exists with type '{existing_type}' (requested '{type_name}')"
+                )
+            return desc, False
+        except Exception:
+            # If anything goes wrong, fall back to creating a fresh topic
+            pass
+
+    tq = fastdds.TopicQos()
+    participant.get_default_topic_qos(tq)
+    topic_obj = participant.create_topic(name, type_name, tq)
+    if topic_obj is None:
+        raise RuntimeError(f"Failed to create topic '{name}'")
+    return topic_obj, True
