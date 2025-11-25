@@ -3,6 +3,53 @@ import importlib
 import types
 
 
+TOPIC_PREFIX = "rt/"
+SERVICE_REQUEST_PREFIX = "rq/"
+SERVICE_RESPONSE_PREFIX = "rr/"
+
+
+def _normalize_namespace(ns: str) -> str:
+    """Normalize namespace per ROS 2 rules (leading slash, no trailing slash except root)."""
+    if not ns:
+        return ""
+    ns = "/" + ns.lstrip("/")
+    if len(ns) > 1 and ns.endswith("/"):
+        ns = ns.rstrip("/")
+    return ns
+
+
+def _join_with_namespace(ns: str, name: str) -> str:
+    ns = ns.rstrip("/")
+    name = name.lstrip("/")
+    if not ns:
+        return "/" + name if name else "/"
+    if not name:
+        return ns
+    return ns + "/" + name
+
+
+def resolve_name(name: str, namespace: str, node_name: str) -> str:
+    """
+    Resolve ROS graph names (topics/services) following ROS 2 name resolution rules:
+      - absolute: /foo stays /foo
+      - relative: foo -> <namespace>/foo
+      - private: ~foo -> <namespace>/<node_name>/foo
+    Reference: https://design.ros2.org/articles/topic_and_service_names.html
+    Returns an absolute name starting with "/".
+    """
+    if not name:
+        return _normalize_namespace(namespace) or "/"
+    if name.startswith("~"):
+        ns = _normalize_namespace(namespace)
+        base = _join_with_namespace(ns or "/", node_name)
+        return _join_with_namespace(base, name[1:])
+    if name.startswith("/"):
+        cleaned = name.lstrip("/")
+        return "/" + cleaned
+    ns = _normalize_namespace(namespace)
+    return _join_with_namespace(ns or "/", name)
+
+
 def resolve_generated_type(obj):
     """
     fastddsgen -python 生成物を指す `obj` (モジュール or クラス) から

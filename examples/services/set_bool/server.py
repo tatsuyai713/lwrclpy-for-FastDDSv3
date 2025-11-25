@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Minimal service server using std_msgs/srv/SetBool."""
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.srv import SetBool
 
 

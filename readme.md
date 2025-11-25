@@ -96,6 +96,15 @@ python3 examples/pubsub/string/listener.py   # Terminal A
 python3 examples/pubsub/string/talker.py     # Terminal B
 ```
 
+The repository now ships a drop-in `rclpy` shim, so you can launch the official ROS 2 samples without edits. From this repo’s root:
+
+```bash
+# Minimal publisher from the official ros2/examples repo (already cloned under third_party/)
+python3 third_party/ros2_examples/rclpy/topics/minimal_publisher/examples_rclpy_minimal_publisher/publisher_member_function.py
+# In another terminal, start the matching subscriber
+python3 third_party/ros2_examples/rclpy/topics/minimal_subscriber/examples_rclpy_minimal_subscriber/subscriber_member_function.py
+```
+
 ---
 
 ## Examples
@@ -103,7 +112,21 @@ python3 examples/pubsub/string/talker.py     # Terminal B
 - Basic pub/sub (string): `examples/pubsub/string/{listener.py,talker.py}`
 - Executors: `examples/executor/{single_node_spin.py,multithreaded_spin.py}`
 - Timers/parameters/services: see `examples/timers/`, `examples/parameters/`, `examples/services/`.
+- Actions: `examples/actions/{fibonacci_action_server.py,fibonacci_action_client.py}` demonstrates the bundled action server/client.
+- Guard conditions: `examples/guard_condition/trigger_guard_condition.py` demonstrates `Node.create_guard_condition`.
 - ML demo with PyTorch: `examples/pubsub/ml/` (requires your ML deps).
+
+For parity testing you can also run the unmodified ROS 2 rclpy samples mirrored in `third_party/ros2_examples/rclpy/…` thanks to the bundled compatibility shim.
+
+Example action round-trip with the bundled demos (two shells):
+
+```bash
+# Terminal A
+python3 examples/actions/fibonacci_action_server.py
+
+# Terminal B
+python3 examples/actions/fibonacci_action_client.py
+```
 
 ---
 

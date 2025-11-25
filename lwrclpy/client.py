@@ -5,18 +5,28 @@ from .publisher import Publisher
 from .subscription import Subscription
 from .qos import QoSProfile
 from .typesupport import RegisteredType
-from .utils import resolve_service_type
+from .utils import resolve_service_type, SERVICE_REQUEST_PREFIX, SERVICE_RESPONSE_PREFIX
 from .context import get_participant
 from .utils import get_or_create_topic
+from .future import Future
 
 
 class Client:
     """Best-effort rclpy-like Client (single outstanding request)."""
 
-    def __init__(self, service_type, service_name: str, qos_profile: QoSProfile, topic_prefix: str = ""):
+    def __init__(
+        self,
+        service_type,
+        service_name: str,
+        qos_profile: QoSProfile,
+        topic_prefix: str = "",
+        *,
+        enqueue_cb=None,
+    ):
         self._participant = get_participant()
         self._service_name = service_name
         self._prefix = topic_prefix
+        self._enqueue_cb = enqueue_cb or (lambda cb, msg: cb(msg))
 
         req_cls, res_cls, _req_pubsub, _res_pubsub = resolve_service_type(service_type)
         self._request_cls = req_cls
@@ -34,13 +44,16 @@ class Client:
             qos_profile,
             msg_ctor=self._request_cls,
         )
-        self._response = None
-        self._cond = threading.Condition()
+        self._lock = threading.Lock()
+        self._pending_future: Future | None = None
 
         def _on_response(msg):
-            with self._cond:
-                self._response = msg
-                self._cond.notify_all()
+            future = None
+            with self._lock:
+                future = self._pending_future
+                self._pending_future = None
+            if future:
+                future.set_result(msg)
 
         self._subscription = Subscription(
             self._participant,
@@ -48,7 +61,7 @@ class Client:
             qos_profile,
             _on_response,
             self._response_cls,
-            enqueue_cb=lambda cb, msg: cb(msg),
+            enqueue_cb=self._enqueue_cb,
         )
 
     def _make_topic(self, name: str, type_name: str):
@@ -57,19 +70,26 @@ class Client:
         return topic_obj
 
     def call(self, request, timeout: Optional[float] = None):
-        """Send request and block for one response. Single outstanding request supported."""
-        with self._cond:
-            self._response = None
+        """Send request and block for one response."""
+        future = self.call_async(request)
+        try:
+            return future.result(timeout)
+        except TimeoutError:
+            future.cancel()
+            return None
+
+    def call_async(self, request) -> Future:
+        """Send request asynchronously, returning a Future resolved with the response."""
+        future = Future()
+        with self._lock:
+            if self._pending_future is not None:
+                raise RuntimeError("Only one pending service request is supported at a time")
+            self._pending_future = future
         self._publisher.publish(request)
-        with self._cond:
-            if timeout is None:
-                while self._response is None:
-                    self._cond.wait()
-            else:
-                self._cond.wait(timeout=timeout)
-            return self._response
+        return future
 
     def send_request(self, request):
+        """Compatibility alias used by some examples."""
         self._publisher.publish(request)
         return True
 
@@ -89,9 +109,11 @@ class Client:
 
 def _service_topics(name: str, prefix: str = ""):
     cleaned = name.lstrip("/")
-    req = f"rq/{cleaned}"
-    res = f"rr/{cleaned}"
-    if prefix and not req.startswith(prefix):
-        req = prefix + req
-        res = prefix + res
+    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}"
+    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}"
+    if prefix:
+        if not req.startswith(prefix):
+            req = prefix + req
+        if not res.startswith(prefix):
+            res = prefix + res
     return req, res

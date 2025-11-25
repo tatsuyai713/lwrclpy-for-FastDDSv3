@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 def callback(msg: String):

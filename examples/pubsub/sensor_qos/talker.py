@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Talker using sensor_data QoS profile (best-effort)."""
 import time
-import lwrclpy as rclpy
-from lwrclpy import QoSProfile
+import rclpy
+from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 
 

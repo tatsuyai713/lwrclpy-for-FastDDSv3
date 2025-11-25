@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Wall timer demo: publish String at a fixed rate using create_wall_timer."""
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 

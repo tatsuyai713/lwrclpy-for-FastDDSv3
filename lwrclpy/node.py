@@ -8,9 +8,16 @@ from .qos import QoSProfile
 from .publisher import Publisher
 from .subscription import Subscription
 from .typesupport import RegisteredType
-from .utils import resolve_generated_type, get_or_create_topic
+from .utils import (
+    resolve_generated_type,
+    get_or_create_topic,
+    resolve_name,
+    TOPIC_PREFIX,
+)
 from .client import Client
 from .service import Service
+from .clock import Clock
+from .guard_condition import GuardCondition
 
 
 # --- rclpy.Rate 相当（壁時計ベース） -----------------------------------------
@@ -102,23 +109,34 @@ class Node:
     ):
         self._name = name
         self._namespace = namespace if namespace.startswith("/") or namespace == "" else "/" + namespace
+        self._pubsub_prefix = TOPIC_PREFIX  # ROS 2 DDS mapping: rt/<topic>
+        self._service_prefix = ""  # rq/rr are applied in client/service helpers
         self._participant = get_participant()
         self._logger = _NodeLogger(self.get_fully_qualified_name())
-        self._topics: dict[str, tuple[object, bool]] = {}  # name -> (Topic, owned)
+        self._topics: dict[str, tuple[object, bool]] = {}  # resolved name -> (Topic, owned)
         self._publishers = []
         self._subscriptions = []
         self._timers = []
+        self._guard_conditions = []
         self._callback_queue = []
         self._type_cache = {}  # key: message classの完全修飾名 / module名
         self._parameters: dict[str, Parameter] = {}
         self._allow_undeclared_parameters = allow_undeclared_parameters
         self._auto_declare_from_overrides = automatically_declare_parameters_from_overrides
+        self._clock = Clock()
 
         if parameters:
             self.declare_parameters("", [(p.name, p.value) if isinstance(p, Parameter) else p for p in parameters])
 
     def _cache_key(self, msg_cls):
         return f"{msg_cls.__module__}.{msg_cls.__name__}"
+
+    def _resolve_topic_name(self, name: str) -> str:
+        """Apply ROS 2 name resolution and DDS topic prefix (rt/)."""
+        resolved = resolve_name(name, self._namespace, self._name).lstrip("/")
+        if resolved.startswith(self._pubsub_prefix):
+            return resolved
+        return f"{self._pubsub_prefix}{resolved}" if self._pubsub_prefix else resolved
 
     # ------------------- rclpy 風の Rate / sleep -------------------
     def create_rate(self, hz: float) -> _WallRate:
@@ -145,6 +163,9 @@ class Node:
     def get_fully_qualified_name(self) -> str:
         ns = self.get_namespace().rstrip("/")
         return f"{ns}/{self._name}" if ns else f"/{self._name}"
+
+    def get_clock(self) -> Clock:
+        return self._clock
 
     def declare_parameter(self, name: str, value=None):
         """Store a parameter locally (best-effort rclpy compatibility)."""
@@ -201,7 +222,7 @@ class Node:
         return SetParametersResult(ok, reason)
 
     # ------------------- Publisher / Subscription 等 -------------------
-    def create_publisher(self, msg_type, topic: str, qos_profile: QoSProfile | int = 10):
+    def create_publisher(self, msg_type, topic: str, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
         # 型解決（モジュール or クラスの両対応）
         _mod, msg_cls, _pubsub_cls = resolve_generated_type(msg_type)
@@ -211,13 +232,14 @@ class Node:
             ts = RegisteredType(msg_cls)
             type_name = ts.register()
             self._type_cache[key] = type_name
-        topic_obj, owned = self._create_topic(topic, type_name)
-        self._topics[topic] = (topic_obj, owned)
+        resolved_topic = self._resolve_topic_name(topic)
+        topic_obj, owned = self._create_topic(resolved_topic, type_name)
+        self._topics[resolved_topic] = (topic_obj, owned)
         pub = Publisher(self._participant, topic_obj, qos, msg_ctor=msg_cls)
         self._publishers.append(pub)
         return pub
 
-    def create_subscription(self, msg_type, topic: str, callback, qos_profile: QoSProfile | int = 10):
+    def create_subscription(self, msg_type, topic: str, callback, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
         # 型解決（モジュール or クラスの両対応）
         _mod, msg_cls, _pubsub_cls = resolve_generated_type(msg_type)
@@ -227,21 +249,24 @@ class Node:
             ts = RegisteredType(msg_cls)
             type_name = ts.register()
             self._type_cache[key] = type_name
-        topic_obj, owned = self._create_topic(topic, type_name)
-        self._topics[topic] = (topic_obj, owned)
+        resolved_topic = self._resolve_topic_name(topic)
+        topic_obj, owned = self._create_topic(resolved_topic, type_name)
+        self._topics[resolved_topic] = (topic_obj, owned)
         # メッセージ生成
         msg_ctor = msg_cls
         sub = Subscription(self._participant, topic_obj, qos, callback, msg_ctor, self._enqueue_callback)
         self._subscriptions.append(sub)
         return sub
 
-    def create_client(self, srv_type, srv_name: str, qos_profile: QoSProfile | int = 10):
+    def create_client(self, srv_type, srv_name: str, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
-        return Client(srv_type, srv_name, qos, topic_prefix=self._topic_prefix)
+        resolved = resolve_name(srv_name, self._namespace, self._name)
+        return Client(srv_type, resolved, qos, topic_prefix=self._service_prefix, enqueue_cb=self._enqueue_callback)
 
-    def create_service(self, srv_type, srv_name: str, callback, qos_profile: QoSProfile | int = 10):
+    def create_service(self, srv_type, srv_name: str, callback, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
-        return Service(srv_type, srv_name, callback, qos)
+        resolved = resolve_name(srv_name, self._namespace, self._name)
+        return Service(srv_type, resolved, callback, qos, topic_prefix=self._service_prefix)
 
     def create_action_server(self, action_type, action_name: str, execute_callback, **kwargs):
         from .action import ActionServer
@@ -251,7 +276,7 @@ class Node:
         from .action import ActionClient
         return ActionClient(self, action_type, action_name, **kwargs)
 
-    def create_timer(self, period_sec: float, callback, *, oneshot: bool = False):
+    def create_timer(self, period_sec: float, callback, *, callback_group=None, oneshot: bool = False):
         from .timer import create_timer
         # Enqueue timer callbacks into the node's callback queue
         t = create_timer(period_sec, callback, oneshot=oneshot, enqueue_cb=self._enqueue_callback)
@@ -260,6 +285,11 @@ class Node:
 
     def create_wall_timer(self, period_sec: float, callback):
         return self.create_timer(period_sec, callback)
+
+    def create_guard_condition(self, callback, *, callback_group=None):
+        gc = GuardCondition(callback, self._enqueue_callback)
+        self._guard_conditions.append(gc)
+        return gc
 
     def destroy_publisher(self, pub):
         try:
@@ -297,6 +327,12 @@ class Node:
             except Exception:
                 pass
         self._subscriptions.clear()
+        for gc in self._guard_conditions:
+            try:
+                gc.destroy()
+            except Exception:
+                pass
+        self._guard_conditions.clear()
         for name, (tobj, owned) in list(self._topics.items()):
             try:
                 if owned:

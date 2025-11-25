@@ -7,6 +7,7 @@ from __future__ import annotations
 import fastdds  # type: ignore
 from .qos import QoSProfile
 from .message_utils import clone_message
+from .duration import Duration
 
 
 def _force_data_sharing_on_writer(wq: "fastdds.DataWriterQos") -> None:
@@ -62,6 +63,27 @@ class Publisher:
         except Exception:
             to_send = msg  # fall back to original on failure
         self._writer.write(to_send)
+
+    def wait_for_all_acked(self, timeout: Duration | float | int | None = None) -> bool:
+        """Block until all samples are acknowledged or timeout occurs."""
+        duration = fastdds.Duration_t()
+        if timeout is None:
+            duration.seconds = getattr(fastdds, "DURATION_INFINITE_SEC", 0x7fffffff)
+            duration.nanosec = getattr(fastdds, "DURATION_INFINITE_NSEC", 0x7fffffff)
+        else:
+            if isinstance(timeout, Duration):
+                total_ns = timeout.nanoseconds
+            else:
+                total_ns = int(float(timeout) * 1_000_000_000)
+            if total_ns < 0:
+                total_ns = 0
+            duration.seconds = total_ns // 1_000_000_000
+            duration.nanosec = total_ns % 1_000_000_000
+        try:
+            rc = self._writer.wait_for_acknowledgments(duration)
+            return bool(rc) if isinstance(rc, bool) else True
+        except Exception:
+            return False
 
     def destroy(self) -> None:
         """Tear down DataWriter/Publisher in the right order, swallowing errors."""

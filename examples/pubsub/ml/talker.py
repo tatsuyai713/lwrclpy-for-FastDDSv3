@@ -2,8 +2,8 @@
 import time
 import torch
 
-import lwrclpy as rclpy
-from lwrclpy import QoSProfile
+import rclpy
+from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 
 def main():

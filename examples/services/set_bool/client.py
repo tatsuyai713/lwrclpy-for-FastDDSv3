@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal service client using std_msgs/srv/SetBool."""
 import time
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.srv import SetBool
 
 
