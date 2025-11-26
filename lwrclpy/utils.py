@@ -6,6 +6,7 @@ import types
 TOPIC_PREFIX = "rt/"
 SERVICE_REQUEST_PREFIX = "rq/"
 SERVICE_RESPONSE_PREFIX = "rr/"
+ACTION_PREFIX = "ra/"
 
 
 def _normalize_namespace(ns: str) -> str:
@@ -215,25 +216,24 @@ def get_or_create_topic(participant, name: str, type_name: str):
     """
     import fastdds  # local import to avoid mandatory dependency at import-time
 
-    # Try to reuse an existing Topic first
+    # Try to reuse an existing Topic instance first
     try:
-        desc = participant.lookup_topicdescription(name)
+        duration = fastdds.Duration_t()
+        duration.seconds = 0
+        duration.nanosec = 0
+        existing_topic = participant.find_topic(name, duration)
     except Exception:
-        desc = None
-    if desc is not None:
+        existing_topic = None
+    if existing_topic is not None:
+        # Ensure type matches
         try:
-            existing_type = None
-            if hasattr(desc, "get_type_name"):
-                existing_type = desc.get_type_name()
-            elif hasattr(desc, "getTopicDataType"):
-                existing_type = desc.getTopicDataType()
+            existing_type = existing_topic.get_type_name()
             if existing_type and existing_type != type_name:
                 raise RuntimeError(
                     f"Topic '{name}' already exists with type '{existing_type}' (requested '{type_name}')"
                 )
-            return desc, False
+            return existing_topic, False
         except Exception:
-            # If anything goes wrong, fall back to creating a fresh topic
             pass
 
     tq = fastdds.TopicQos()

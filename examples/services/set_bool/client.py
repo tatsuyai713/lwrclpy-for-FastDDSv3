@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Minimal service client using std_msgs/srv/SetBool."""
 import time
+
 import rclpy
-from std_msgs.srv import SetBool
+from std_msgs.srv import SetBool_Request, SetBool_Response
+
+class SetBool:
+    Request = SetBool_Request
+    Response = SetBool_Response
 
 
 def main():
@@ -15,7 +20,11 @@ def main():
     for i in range(5):
         req.data = (i % 2) == 0
         node.get_logger().info(f"request {i}: data={req.data}")
-        resp = client.call(req, timeout=2.0)
+        resp = client.call(req, timeout=5.0)
+        if resp is None:
+            node.get_logger().warning("No response yet (service not available?). retrying...")
+            time.sleep(0.5)
+            continue
         node.get_logger().info(f"response {i}: success={resp.success} msg={resp.message}")
         time.sleep(0.5)
 
