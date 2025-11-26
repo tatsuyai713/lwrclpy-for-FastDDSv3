@@ -3,11 +3,7 @@
 import time
 
 import rclpy
-from std_msgs.srv import SetBool_Request, SetBool_Response
-
-class SetBool:
-    Request = SetBool_Request
-    Response = SetBool_Response
+from std_msgs.srv import SetBool
 
 
 def main():

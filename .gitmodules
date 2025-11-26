@@ -1,3 +1,7 @@
 [submodule "third_party/ros-data-types-for-fastdds"]
 	path = third_party/ros-data-types-for-fastdds
 	url = https://github.com/tatsuyai713/ros-data-types-for-fastdds.git
+[submodule "third_party/ros2_examples"]
+	path = third_party/ros2_examples
+	url = https://github.com/ros2/examples.git
+	branch = jazzy
