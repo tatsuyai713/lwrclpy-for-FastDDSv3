@@ -5,7 +5,7 @@ from .publisher import Publisher
 from .subscription import Subscription
 from .qos import QoSProfile
 from .typesupport import RegisteredType
-from .utils import resolve_service_type
+from .utils import resolve_service_type, SERVICE_REQUEST_PREFIX, SERVICE_RESPONSE_PREFIX
 from .context import get_participant
 from .utils import get_or_create_topic
 
@@ -89,9 +89,11 @@ class Client:
 
 def _service_topics(name: str, prefix: str = ""):
     cleaned = name.lstrip("/")
-    req = f"rq/{cleaned}"
-    res = f"rr/{cleaned}"
-    if prefix and not req.startswith(prefix):
-        req = prefix + req
-        res = prefix + res
+    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}"
+    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}"
+    if prefix:
+        if not req.startswith(prefix):
+            req = prefix + req
+        if not res.startswith(prefix):
+            res = prefix + res
     return req, res

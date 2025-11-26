@@ -10,7 +10,13 @@ from typing import Callable, Optional
 
 from .qos import QoSProfile
 from .typesupport import RegisteredType
-from .utils import resolve_generated_type, resolve_action_type, get_or_create_topic
+from .utils import (
+    resolve_generated_type,
+    resolve_action_type,
+    resolve_name,
+    get_or_create_topic,
+    ACTION_PREFIX,
+)
 from .publisher import Publisher
 from .subscription import Subscription
 from .context import get_participant
@@ -174,8 +180,9 @@ class ActionServer:
         self._feedback_type_name = RegisteredType(resolve_generated_type(self._feedback_msg_cls)[1]).register()
         self._status_type_name = RegisteredType(resolve_generated_type(types["cancel_res"]).register if False else resolve_generated_type(types["cancel_res"])[1]).register()
 
-        # topics
-        base = action_name.strip("/")
+        # topics (ROS 2 resolution + DDS action prefix ra/)
+        resolved = resolve_name(action_name, node.get_namespace(), node.get_name()).lstrip("/")
+        base = resolved if resolved.startswith(ACTION_PREFIX) else f"{ACTION_PREFIX}{resolved}"
         send_goal_req_topic = f"{base}/_action/send_goal/_request"
         send_goal_res_topic = f"{base}/_action/send_goal/_response"
         get_result_req_topic = f"{base}/_action/get_result/_request"
@@ -340,7 +347,8 @@ class ActionClient:
         self._cancel_req_cls = types["cancel_req"]
         self._cancel_res_cls = types["cancel_res"]
 
-        base = action_name.strip("/")
+        resolved = resolve_name(action_name, node.get_namespace(), node.get_name()).lstrip("/")
+        base = resolved if resolved.startswith(ACTION_PREFIX) else f"{ACTION_PREFIX}{resolved}"
         self._send_goal_req_topic = f"{base}/_action/send_goal/_request"
         self._send_goal_res_topic = f"{base}/_action/send_goal/_response"
         self._get_result_req_topic = f"{base}/_action/get_result/_request"

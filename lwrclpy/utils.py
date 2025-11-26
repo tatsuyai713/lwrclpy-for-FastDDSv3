@@ -3,6 +3,54 @@ import importlib
 import types
 
 
+TOPIC_PREFIX = "rt/"
+SERVICE_REQUEST_PREFIX = "rq/"
+SERVICE_RESPONSE_PREFIX = "rr/"
+ACTION_PREFIX = "ra/"
+
+
+def _normalize_namespace(ns: str) -> str:
+    """Normalize namespace per ROS 2 rules (leading slash, no trailing slash except root)."""
+    if not ns:
+        return ""
+    ns = "/" + ns.lstrip("/")
+    if len(ns) > 1 and ns.endswith("/"):
+        ns = ns.rstrip("/")
+    return ns
+
+
+def _join_with_namespace(ns: str, name: str) -> str:
+    ns = ns.rstrip("/")
+    name = name.lstrip("/")
+    if not ns:
+        return "/" + name if name else "/"
+    if not name:
+        return ns
+    return ns + "/" + name
+
+
+def resolve_name(name: str, namespace: str, node_name: str) -> str:
+    """
+    Resolve ROS graph names (topics/services) following ROS 2 name resolution rules:
+      - absolute: /foo stays /foo
+      - relative: foo -> <namespace>/foo
+      - private: ~foo -> <namespace>/<node_name>/foo
+    Reference: https://design.ros2.org/articles/topic_and_service_names.html
+    Returns an absolute name starting with "/".
+    """
+    if not name:
+        return _normalize_namespace(namespace) or "/"
+    if name.startswith("~"):
+        ns = _normalize_namespace(namespace)
+        base = _join_with_namespace(ns or "/", node_name)
+        return _join_with_namespace(base, name[1:])
+    if name.startswith("/"):
+        cleaned = name.lstrip("/")
+        return "/" + cleaned
+    ns = _normalize_namespace(namespace)
+    return _join_with_namespace(ns or "/", name)
+
+
 def resolve_generated_type(obj):
     """
     fastddsgen -python 生成物を指す `obj` (モジュール or クラス) から
@@ -168,25 +216,24 @@ def get_or_create_topic(participant, name: str, type_name: str):
     """
     import fastdds  # local import to avoid mandatory dependency at import-time
 
-    # Try to reuse an existing Topic first
+    # Try to reuse an existing Topic instance first
     try:
-        desc = participant.lookup_topicdescription(name)
+        duration = fastdds.Duration_t()
+        duration.seconds = 0
+        duration.nanosec = 0
+        existing_topic = participant.find_topic(name, duration)
     except Exception:
-        desc = None
-    if desc is not None:
+        existing_topic = None
+    if existing_topic is not None:
+        # Ensure type matches
         try:
-            existing_type = None
-            if hasattr(desc, "get_type_name"):
-                existing_type = desc.get_type_name()
-            elif hasattr(desc, "getTopicDataType"):
-                existing_type = desc.getTopicDataType()
+            existing_type = existing_topic.get_type_name()
             if existing_type and existing_type != type_name:
                 raise RuntimeError(
                     f"Topic '{name}' already exists with type '{existing_type}' (requested '{type_name}')"
                 )
-            return desc, False
+            return existing_topic, False
         except Exception:
-            # If anything goes wrong, fall back to creating a fresh topic
             pass
 
     tq = fastdds.TopicQos()
