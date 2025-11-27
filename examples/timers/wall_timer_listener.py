@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Listener for the wall_timer_talker publishing on timer/chatter."""
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 

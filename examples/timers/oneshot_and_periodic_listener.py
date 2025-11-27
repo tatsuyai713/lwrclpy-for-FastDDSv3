@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Listener for the oneshot_and_periodic timer talker on timer/combo."""
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 

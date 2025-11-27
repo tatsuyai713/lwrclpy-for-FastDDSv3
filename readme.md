@@ -78,6 +78,7 @@ bash scripts/install_ros_data_types.sh
 Notes:
 - A new shell will have the required env vars via `~/.bashrc`.  
 - If you need manual export, see the script output for `PYTHONPATH` / `LD_LIBRARY_PATH` snippets.
+- The script also injects ROS 2-style service aliases (e.g., `SetBool.Request`) into the generated Python packages so rclpy code runs unchanged.
 
 ### 3) Build the self-contained wheel (inside a venv)
 This packages lwrclpy + vendored Fast DDS runtime + generated Python types from `._types_python_build_v3/src`.
@@ -96,6 +97,15 @@ python3 examples/pubsub/string/listener.py   # Terminal A
 python3 examples/pubsub/string/talker.py     # Terminal B
 ```
 
+The repository now ships a drop-in `rclpy` shim, so you can launch the official ROS 2 samples without edits. From this repo’s root:
+
+```bash
+# Minimal publisher from the official ros2/examples repo (already cloned under third_party/)
+python3 third_party/ros2_examples/rclpy/topics/minimal_publisher/examples_rclpy_minimal_publisher/publisher_member_function.py
+# In another terminal, start the matching subscriber
+python3 third_party/ros2_examples/rclpy/topics/minimal_subscriber/examples_rclpy_minimal_subscriber/subscriber_member_function.py
+```
+
 ---
 
 ## Examples
@@ -103,7 +113,21 @@ python3 examples/pubsub/string/talker.py     # Terminal B
 - Basic pub/sub (string): `examples/pubsub/string/{listener.py,talker.py}`
 - Executors: `examples/executor/{single_node_spin.py,multithreaded_spin.py}`
 - Timers/parameters/services: see `examples/timers/`, `examples/parameters/`, `examples/services/`.
+- Actions: `examples/actions/{fibonacci_action_server.py,fibonacci_action_client.py}` demonstrates the bundled action server/client.
+- Guard conditions: `examples/guard_condition/trigger_guard_condition.py` demonstrates `Node.create_guard_condition`.
 - ML demo with PyTorch: `examples/pubsub/ml/` (requires your ML deps).
+
+For parity testing you can also run the unmodified ROS 2 rclpy samples mirrored in `third_party/ros2_examples/rclpy/…` thanks to the bundled compatibility shim. Service aliases (e.g., `SetBool.Request`) are auto-generated when you run `scripts/install_ros_data_types.sh`, so plain `from std_msgs.srv import SetBool` works exactly like upstream ROS 2.
+
+Example action round-trip with the bundled demos (two shells):
+
+```bash
+# Terminal A
+python3 examples/actions/fibonacci_action_server.py
+
+# Terminal B
+python3 examples/actions/fibonacci_action_client.py
+```
 
 ---
 
@@ -233,6 +257,7 @@ bash scripts/install_ros_data_types.sh
 ```
 備考:
 - 新しいシェルでは `~/.bashrc` 経由で環境変数が適用されます。手動設定が必要ならスクリプト出力を参照してください。
+- 実行後には生成済み Python パッケージに ROS 2 互換のサービスラッパー（`SetBool.Request` など）が自動で追加されるため、オリジナルの rclpy コードをそのまま使用できます。
 
 ### 3) ランタイム同梱ホイールをビルド（venv 内）
 `._types_python_build_v3/src` の生成物と Fast DDS ランタイムを同梱したホイールを作ります。
@@ -259,6 +284,8 @@ python3 examples/pubsub/string/talker.py     # 端末 B
 - Executor: `examples/executor/{single_node_spin.py,multithreaded_spin.py}`
 - Timers / Parameters / Services: `examples/timers/`, `examples/parameters/`, `examples/services/`
 - PyTorch を用いた ML デモ: `examples/pubsub/ml/`（必要に応じて ML 依存を導入）
+
+`third_party/ros2_examples/` に ROS 2 Jazzy ブランチの rclpy サンプルをそのまま配置しているため、`python3 third_party/ros2_examples/rclpy/...` のように実行すればオリジナルの rclpy コードをそのまま動かせます。`scripts/install_ros_data_types.sh` 実行時には Request/Response を束ねたサービスラッパー（`SetBool.Request` 等）が自動追加されるので、ROS 2 と同じ import で利用できます。
 
 ---
 

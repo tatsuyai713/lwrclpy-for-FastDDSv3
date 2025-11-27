@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Listener using sensor_data QoS profile (best-effort)."""
-import lwrclpy as rclpy
-from lwrclpy import QoSProfile
+import rclpy
+from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 
 

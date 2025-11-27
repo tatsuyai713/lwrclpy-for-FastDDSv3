@@ -30,6 +30,13 @@ sudo INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \
      BUILD_ROOT="${BUILD_ROOT}" \
      bash install_python_types.sh
 
+# --- Step 2.1: add ROS 2-style Service aliases to generated Python modules ---
+PY_ALIAS_SCRIPT="${current_dir}/third_party/ros-data-types-for-fastdds/scripts/add_service_aliases.py"
+if [[ -f "${PY_ALIAS_SCRIPT}" ]]; then
+  echo "[INFO] Injecting Request/Response service aliases into generated Python packages..."
+  python3 "${PY_ALIAS_SCRIPT}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to install service aliases"
+fi
+
 # --- Step 2.5: collect all lib*.so into a single location (idempotent) ---
 echo "[INFO] Collecting generated lib*.so to /opt/fast-dds-v3-libs/lib ..."
 sudo mkdir -p /opt/fast-dds-v3-libs/lib

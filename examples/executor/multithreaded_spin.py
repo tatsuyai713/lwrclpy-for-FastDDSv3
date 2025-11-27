@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """MultiThreadedExecutor demo: two nodes each with its own topic in parallel."""
 import time
-import lwrclpy as rclpy
-from lwrclpy import MultiThreadedExecutor
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 
 

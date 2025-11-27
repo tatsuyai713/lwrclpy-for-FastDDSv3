@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parameter declare/get/set demo with logging."""
 import time
-import lwrclpy as rclpy
+import rclpy
 
 
 def main():

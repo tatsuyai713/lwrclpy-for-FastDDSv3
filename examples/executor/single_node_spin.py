@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Single node spin example using rclpy.spin(node)."""
 import time
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 

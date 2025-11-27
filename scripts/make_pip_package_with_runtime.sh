@@ -21,7 +21,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS_DIR="${REPO_ROOT}/scripts"
 PKG_NAME="lwrclpy"
-PKG_VERSION="${PKG_VERSION:-0.1.0}"
+PKG_VERSION="${PKG_VERSION:-0.1.1}"
 
 BUILD_ROOT="${BUILD_ROOT:-${REPO_ROOT}/._types_python_build_v3}"   # prebuilt DataTypes
 PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"                          # fixed Fast-DDS prefix
@@ -76,6 +76,9 @@ bash "${SCRIPTS_DIR}/install_python_types.sh"
 # ========= 2) Stage lwrclpy pure-Python sources =========
 echo "[INFO] Staging 'lwrclpy' sources…"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/lwrclpy/" "${STAGING_ROOT}/lwrclpy/"
+
+echo "[INFO] Staging 'rclpy' compatibility shim…"
+rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/rclpy/" "${STAGING_ROOT}/rclpy/"
 
 # ========= 3) Vendor native libs (fixed paths) =========
 echo "[INFO] Vendoring native libs → lwrclpy/_vendor/lib"

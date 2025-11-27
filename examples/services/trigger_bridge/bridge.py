@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """Service + client in one process to show round-trip using new API."""
-import lwrclpy as rclpy
-from std_msgs.srv import Trigger_Request, Trigger_Response
-
-
-class Trigger:
-    Request = Trigger_Request
-    Response = Trigger_Response
+import rclpy
+from std_msgs.srv import Trigger
 
 
 def main():

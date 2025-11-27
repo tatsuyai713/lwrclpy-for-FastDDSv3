@@ -8,6 +8,9 @@ from . import timer
 from .client import Client
 from .service import Service
 from .action import ActionServer, ActionClient, GoalResponse, CancelResponse
+from .service_aliases import install_service_aliases as _install_service_aliases
+
+_install_service_aliases()
 
 __all__ = [
     "init", "shutdown", "ok", "spin", "spin_once", "spin_some",

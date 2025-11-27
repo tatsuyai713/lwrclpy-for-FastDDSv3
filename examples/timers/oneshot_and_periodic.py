@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-shot + periodic timers: publish via periodic, adjust with oneshot."""
-import lwrclpy as rclpy
+import rclpy
 from std_msgs.msg import String
 
 
