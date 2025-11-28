@@ -33,6 +33,7 @@ DIST_DIR="${REPO_ROOT}/dist"
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "[FATAL] '$1' not found" >&2; exit 1; }; }
 need python3
 need rsync
+need patchelf
 
 [[ -d "${REPO_ROOT}/lwrclpy" ]] || { echo "[FATAL] lwrclpy/ folder not found"; exit 1; }
 [[ -x "${SCRIPTS_DIR}/install_python_types.sh" ]] || { echo "[FATAL] scripts/install_python_types.sh not found or not executable"; exit 1; }
@@ -158,15 +159,11 @@ if ! grep -q 'ensure_fastdds()' "${LWRCLPY_INIT}"; then
   mv -f "${tmp}" "${LWRCLPY_INIT}"
 fi
 
-# ========= 6) Optional: set RPATH with patchelf (minimal) =========
-if command -v patchelf >/dev/null 2>&1; then
-  echo "[INFO] Setting RPATH via patchelf…"
-  while IFS= read -r so; do
-    patchelf --set-rpath '$ORIGIN:$ORIGIN/../lib' "$so" || true
-  done < <(find "${STAGING_ROOT}" -type f -name '*.so' | sort)
-else
-  echo "[WARN] patchelf not found; relying on ctypes preload only."
-fi
+# ========= 6) Set RPATH with patchelf (minimal) =========
+echo "[INFO] Setting RPATH via patchelf…"
+while IFS= read -r so; do
+  patchelf --set-rpath '$ORIGIN:$ORIGIN/../lib' "$so" || true
+done < <(find "${STAGING_ROOT}" -type f -name '*.so' | sort)
 
 # ========= 7) Make wheel metadata (platform-specific via bdist_wheel) =========
 echo "[INFO] Writing packaging metadata…"
