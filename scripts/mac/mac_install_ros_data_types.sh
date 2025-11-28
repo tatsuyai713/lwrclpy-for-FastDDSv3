@@ -7,6 +7,10 @@
 #   5) Export env vars for current shell (DYLD_LIBRARY_PATH / PYTHONPATH) and persist to ~/.zshrc.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"
+
 # --- 0) sanity (macOS only) ---
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "[FATAL] This script is for macOS. Detected: $(uname -s)" >&2
@@ -38,18 +42,60 @@ fi
 
 # --- 2) generate & build all message bindings ---
 echo "[INFO] Running gen_python_types.sh …"
-bash mac_gen_python_types.sh
+bash "${SCRIPT_DIR}/mac_gen_python_types.sh"
 
 # --- 3) install generated packages into target prefix ---
-current_dir="$(pwd)"
+current_dir="${ROOT_DIR}"
 echo "[DBG] Current dir: ${current_dir}"
 
-BUILD_ROOT="${current_dir}/../._types_python_build_v3"
+BUILD_ROOT="${ROOT_DIR}/._types_python_build_v3"
 echo "[DBG] BUILD_ROOT: ${BUILD_ROOT}"
 
 sudo INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \
      BUILD_ROOT="${BUILD_ROOT}" \
-     bash mac_install_python_types.sh
+     bash "${SCRIPT_DIR}/mac_install_python_types.sh"
+
+# --- 3.1) add ROS 2-style service aliases to generated Python packages ---
+PY_ALIAS_SCRIPT="${ROOT_DIR}/third_party/ros-data-types-for-fastdds/scripts/add_service_aliases.py"
+if [[ -f "${PY_ALIAS_SCRIPT}" ]]; then
+  echo "[INFO] Injecting Request/Response service aliases into generated Python packages..."
+  ALIAS_TARGET="/opt/fast-dds-v3-libs/python/src"
+  if [[ -w "${ALIAS_TARGET}" ]]; then
+    python3 "${PY_ALIAS_SCRIPT}" "${ALIAS_TARGET}" || echo "[WARN] Failed to install service aliases"
+  else
+    sudo python3 "${PY_ALIAS_SCRIPT}" "${ALIAS_TARGET}" || echo "[WARN] Failed to install service aliases"
+  fi
+fi
+
+# --- 3.2) Ensure fastdds Python module is importable (macOS default builds emit .dylib) ---
+ensure_fastdds_python_so() {
+  local fastdds_root="$1"
+  [[ -d "${fastdds_root}" ]] || return
+  while IFS= read -r pkg_dir; do
+    [[ -d "${pkg_dir}" ]] || continue
+    local has_so
+    if compgen -G "${pkg_dir}/_fastdds_python*.so" >/dev/null; then
+      continue
+    fi
+    if compgen -G "${pkg_dir}/_fastdds_python*.dylib" >/dev/null; then
+      while IFS= read -r dylib; do
+        [[ -f "${dylib}" ]] || continue
+        local so="${dylib%.dylib}.so"
+        if [[ -e "${so}" ]]; then
+          continue
+        fi
+        echo "[INFO] Copying $(basename "${dylib}") -> $(basename "${so}") for Python import"
+        if [[ -w "${pkg_dir}" ]]; then
+          /bin/cp -p "${dylib}" "${so}"
+        else
+          sudo /bin/cp -p "${dylib}" "${so}"
+        fi
+      done < <(find "${pkg_dir}" -maxdepth 1 -type f -name '_fastdds_python*.dylib' -print)
+    fi
+  done < <(find "${fastdds_root}/lib" -maxdepth 3 -type d -path "*/python*/site-packages/fastdds" -print 2>/dev/null)
+}
+
+ensure_fastdds_python_so "${PREFIX_V3}" || true
 
 # --- 3.5) collect all lib*.so / lib*.dylib to a single location (idempotent) ---
 TARGET_LIB_DIR="/opt/fast-dds-v3-libs/lib"
@@ -88,7 +134,13 @@ if [[ -s "${_tmp_dirs}" ]]; then
 fi
 rm -f "${_tmp_dirs}"
 
-export DYLD_LIBRARY_PATH="${TARGET_LIB_DIR}${ADD_DYLD_DIRS:+:${ADD_DYLD_DIRS}}:${DYLD_LIBRARY_PATH:-}"
+DYLD_COMBINED="${ADD_DYLD_DIRS}"
+[[ -n "${DYLD_COMBINED}" ]] && DYLD_COMBINED="${DYLD_COMBINED}:"
+DYLD_COMBINED="${DYLD_COMBINED}${TARGET_LIB_DIR}"
+if [[ -n "${DYLD_LIBRARY_PATH:-}" ]]; then
+  DYLD_COMBINED="${DYLD_COMBINED}:${DYLD_LIBRARY_PATH}"
+fi
+export DYLD_LIBRARY_PATH="${DYLD_COMBINED}"
 export PYTHONPATH="/opt/fast-dds-v3-libs/python/src:${PYTHONPATH:-}"
 
 # Fast-DDS Python (merge-install 側) があれば追加

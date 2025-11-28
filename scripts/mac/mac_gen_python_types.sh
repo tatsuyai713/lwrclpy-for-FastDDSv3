@@ -14,14 +14,14 @@ PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"
 FASTDDSGEN_BIN="${FASTDDSGEN_BIN:-/opt/fast-dds-gen-v3/bin/fastddsgen}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROS_TYPES_ROOT="${ROS_TYPES_ROOT:-${ROOT_DIR}/third_party/ros-data-types-for-fastdds}"
 
 BUILD_ROOT="${BUILD_ROOT:-${ROOT_DIR}/._types_python_build_v3}"
 GEN_SRC_ROOT="${BUILD_ROOT}/src"
 INC_STAGE_ROOT="${BUILD_ROOT}/include/src"
 
-PATCH_PY="${PATCH_PY:-${SCRIPT_DIR}/patch_fastdds_swig_v3.py}"   # 任意（存在すれば .i にも適用）
+PATCH_PY="${PATCH_PY:-${ROOT_DIR}/scripts/patch_fastdds_swig_v3.py}"   # 任意（存在すれば .i にも適用）
 
 detect_cores(){ if command -v sysctl >/dev/null 2>&1; then sysctl -n hw.ncpu; elif command -v nproc >/dev/null 2>&1; then nproc; else echo 4; fi; }
 JOBS="${JOBS:-$(detect_cores)}"
@@ -110,31 +110,19 @@ def sub_many(s, rules):
         s = re.sub(pat, rep, s, flags=flags)
     return s
 
-def comment_dups_with_if0(buf: str, func_pat: str) -> str:
-    # 関数定義ブロックを 2個目以降 #if 0 … #endif で囲む
-    pat = re.compile(rf'^\s*(?:static\s+inline|static|SWIGINTERNINLINE|SWIGINTERN)\s+[^\n]*\b{func_pat}\s*\([^)]*\)\s*\{{.*?\n\}}', re.DOTALL | re.MULTILINE)
-    ms = list(pat.finditer(buf))
-    if len(ms) <= 1:
-        return buf
-    delta = 0
-    for m in ms[1:]:
-        a, b = m.start()+delta, m.end()+delta
-        block = buf[a:b]
-        rep = "#if 0 /* __SWIG_DUP_REMOVED__ */\n" + block + "\n#endif /* __SWIG_DUP_REMOVED__ */\n"
-        buf = buf[:a] + rep + buf[b:]
-        delta += len(rep) - (b - a)
-    return buf
+LONG_SCALAR_RULES = [
+    (r'\bunsigned\s+long\s+long\b', 'uint64_t', 0),
+    (r'\bunsigned\s+long\b',        'uint64_t', 0),
+    (r'\blong\s+long\b',            'int64_t',  0),
+    (r'(?<![A-Za-z_])long(?![A-Za-z_])', 'int64_t', 0),
+    (r'\bunsigned\s+int64_t\b',     'uint64_t', 0),
+    (r'\bsigned\s+int64_t\b',       'int64_t',  0),
+    (r'\bunsigned\s+uint64_t\b',    'uint64_t', 0),
+    (r'\bsigned\s+uint64_t\b',      'uint64_t', 0),
+]
 
-def kill_helper_dups(buf: str) -> str:
-    targets = [
-        r'SWIG_AsVal_uint64_t', r'SWIG_AsVal_int64_t',
-        r'SWIG_From_uint64_t',  r'SWIG_From_int64_t',
-        r'SWIG_AsVal_size_t',   r'SWIG_From_size_t',
-        r'SWIG_AsVal_ptrdiff_t',r'SWIG_From_ptrdiff_t',
-    ]
-    for t in targets:
-        buf = comment_dups_with_if0(buf, t)
-    return buf
+def replace_long_scalars(buf: str) -> str:
+    return sub_many(buf, LONG_SCALAR_RULES)
 
 def ensure_header_includes(buf: str) -> str:
     # 最初の #include の直後に <cstdint>/<cstddef> を注入
@@ -153,6 +141,133 @@ def fix_swig_macros(buf: str) -> str:
     buf = re.sub(r'(^\s*#\s*define\s+SWIGINTERN\s+)static(\s+SWIGUNUSED\s*$)', r'\1\2', buf, flags=re.M)
     buf = re.sub(r'(^\s*#\s*define\s+SWIGINTERNINLINE\s+)SWIGINTERN\s+SWIGINLINE\s*$', r'\1SWIGINLINE', buf, flags=re.M)
     return buf
+
+def strip_long_alias_macros(buf: str) -> str:
+    # SWIG 4.4 (macOS) では SWIG_From_int64_t などが PyLong_* へ alias され、
+    # 後段で注入する helper と衝突するため除去する。
+    targets = [
+        r'SWIG_AsVal_int64_t',
+        r'SWIG_From_int64_t',
+        r'SWIG_AsVal_uint64_t',
+        r'SWIG_From_uint64_t',
+    ]
+    for name in targets:
+        pattern = rf'^\s*#\s*define\s+{name}\b[^\n]*\n'
+        buf = re.sub(pattern, '\n', buf, flags=re.M)
+    return buf
+
+def fix_uint64_printf(buf: str) -> str:
+    # uint64_t → %llu に統一（macOS clang の -Wformat 対策）
+    replacements = {
+        '"attempt to assign sequence of size %lu to extended slice of size %lu"':
+            '"attempt to assign sequence of size %llu to extended slice of size %llu"',
+        'SWIG_InitializeModule: size %lu':
+            'SWIG_InitializeModule: size %llu',
+        'SWIG_InitializeModule: type %lu':
+            'SWIG_InitializeModule: type %llu',
+    }
+    for old, new in replacements.items():
+        buf = buf.replace(old, new)
+    return buf
+
+HELPER_DECL_LINE_RE = re.compile(r'^\s*(?:SWIGINTERN(?:INLINE)?|static(?:\s+inline)?)\b')
+HELPER_INLINE_DEF_RE = re.compile(
+    r'^\s*(?:SWIGINTERN(?:INLINE)?|static(?:\s+inline)?)\b[^\n]*?\b'
+    r'(SWIG_(?:AsVal|From)_(?:u?int64_t))\b'
+)
+HELPER_FUNC_NAME_RE = re.compile(r'^\s*(SWIG_(?:AsVal|From)_(?:u?int64_t))\s*\(')
+
+def detect_helper_def(prev_line: str, line: str):
+    m_inline = HELPER_INLINE_DEF_RE.match(line)
+    if m_inline:
+        return m_inline.group(1)
+    m_name = HELPER_FUNC_NAME_RE.match(line)
+    if m_name and HELPER_DECL_LINE_RE.match(prev_line):
+        return m_name.group(1)
+    return None
+
+def helper_defs_from_lines(block_lines):
+    names = set()
+    for idx, line in enumerate(block_lines):
+        prev = block_lines[idx - 1] if idx > 0 else ''
+        name = detect_helper_def(prev, line)
+        if name:
+            names.add(name)
+    return names
+
+def disable_longlong_dups(buf: str) -> str:
+    # SWIG_LONG_LONG_AVAILABLE ブロック内の重複 helper を丸ごと無効化
+    lines = buf.splitlines()
+    out = []
+    defined = set()
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith('#if') and 'SWIG_LONG_LONG_AVAILABLE' in stripped:
+            depth = 1
+            block_lines = [line]
+            i += 1
+            while i < n and depth > 0:
+                current = lines[i]
+                cur_strip = current.strip()
+                block_lines.append(current)
+                if cur_strip.startswith('#if'):
+                    depth += 1
+                if cur_strip.startswith('#endif'):
+                    depth -= 1
+                i += 1
+            block_helpers = helper_defs_from_lines(block_lines)
+            if block_helpers & defined:
+                continue  # drop duplicate helper block entirely
+            defined.update(block_helpers)
+            out.extend(block_lines)
+            continue
+        else:
+            out.append(line)
+            prev = lines[i - 1] if i > 0 else ''
+            name = detect_helper_def(prev, line)
+            if name:
+                defined.add(name)
+            i += 1
+    return "\n".join(out)
+
+def normalize_vector_templates(buf: str) -> str:
+    target = "std::vector"
+    parts = []
+    i = 0
+    n = len(buf)
+    while True:
+        idx = buf.find(target, i)
+        if idx == -1:
+            parts.append(buf[i:])
+            break
+        parts.append(buf[i:idx])
+        j = idx + len(target)
+        while j < n and buf[j].isspace():
+            j += 1
+        if j >= n or buf[j] != '<':
+            parts.append(buf[idx:j])
+            i = j
+            continue
+        head = buf[idx:j]  # includes std::vector and whitespace
+        depth = 1
+        k = j + 1
+        while k < n and depth > 0:
+            ch = buf[k]
+            if ch == '<':
+                depth += 1
+            elif ch == '>':
+                depth -= 1
+            k += 1
+        if depth != 0:
+            parts.append(buf[idx:])
+            break
+        inner = buf[j + 1:k - 1]
+        parts.append(f"{head}<{replace_long_scalars(inner)}>")
+        i = k
+    return ''.join(parts)
 
 HELPER_SIZE_T = r"""
 /* __SWIG_HELPER_INJECTED__: size_t */
@@ -214,6 +329,8 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
         (r'std::array<\s*unsigned\s+long(?:\s+long)?\s*,',r'std::array<uint64_t,',0),
         (r'std::vector<\s*long(?:\s+long)?(\s*,\s*[^>]+)?>',           r'std::vector<int64_t\1>', 0),
         (r'std::vector<\s*unsigned\s+long(?:\s+long)?(\s*,\s*[^>]+)?>',r'std::vector<uint64_t\1>',0),
+        (r'std::vector<\s*long(?:\s+long)?(\s*,\s*[^>]+)?>\s*::',      r'std::vector<int64_t\1>::', 0),
+        (r'std::vector<\s*unsigned\s+long(?:\s+long)?(\s*,\s*[^>]+)?>\s*::', r'std::vector<uint64_t\1>::',0),
         (r'std::allocator<\s*long(?:\s+long)?\s*>',       r'std::allocator<int64_t>',  0),
         (r'std::allocator<\s*unsigned\s+long(?:\s+long)?\s*>', r'std::allocator<uint64_t>', 0),
         (r'__wrap_iter<\s*long(?:\s+long)?\s*\*>',        r'__wrap_iter<int64_t *>',  0),
@@ -225,16 +342,9 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
     ])
 
     # (2) long 系を固定幅へ
-    buf = sub_many(buf, [
-        (r'\bunsigned\s+long\s+long\b', 'uint64_t', 0),
-        (r'\bunsigned\s+long\b',        'uint64_t', 0),
-        (r'\blong\s+long\b',            'int64_t',  0),
-        (r'(?<![A-Za-z_])long(?![A-Za-z_])', 'int64_t', 0),
-        (r'\bunsigned\s+int64_t\b',     'uint64_t', 0),
-        (r'\bsigned\s+int64_t\b',       'int64_t',  0),
-        (r'\bunsigned\s+uint64_t\b',    'uint64_t', 0),
-        (r'\bsigned\s+uint64_t\b',      'uint64_t', 0),
-    ])
+    buf = replace_long_scalars(buf)
+    buf = normalize_vector_templates(buf)
+    buf = replace_long_scalars(buf)
 
     # (3) SWIG の long/unsigned long 別名を 64bit 名へ
     buf = sub_many(buf, [
@@ -248,10 +358,13 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
         (r'SWIG_From_long',                      r'SWIG_From_int64_t',   0),
     ])
 
+    buf = strip_long_alias_macros(buf)
+    buf = fix_uint64_printf(buf)
+    buf = disable_longlong_dups(buf)
+
     if is_wrap:
         buf = fix_swig_macros(buf)      # duplicate static 修正
         buf = ensure_header_includes(buf)
-        buf = kill_helper_dups(buf)     # 重複定義を #if 0 で無効化
         # 不足ヘルパ補完
         buf = append_helper_if_missing(buf, 'SWIG_AsVal_size_t', HELPER_SIZE_T)
         buf = append_helper_if_missing(buf, 'SWIG_From_size_t',  HELPER_SIZE_T)
@@ -293,6 +406,43 @@ assert_no_long_containers() {
     grep -RsnE --include='*.i' --include='*.hpp' --include='*.h' --include='*.hh' --include='*.hxx' --include='*.cxx' --include='*_wrap.cxx' "$pat" "$tree" | sed 's/^/  /' >&2 || true
     exit 1
   fi
+}
+
+print_log_excerpt() {
+  local log_file="$1"
+  local label="$2"
+  local mode="${3:-first}"
+  local match_expr='error|failed|fatal|undefined reference'
+  if [[ ! -s "$log_file" ]]; then
+    echo "[LOG] ${label}: log missing (${log_file})"
+    return
+  fi
+  local err_line=""
+  if command -v rg >/dev/null 2>&1; then
+    if [[ "$mode" == "last" ]]; then
+      err_line="$( (rg -n -i "(${match_expr})" "${log_file}" || true) | tail -n1 | cut -d: -f1 )"
+    else
+      err_line="$( (rg -n -i "(${match_expr})" -m1 "${log_file}" || true) | cut -d: -f1 )"
+    fi
+  else
+    if [[ "$mode" == "last" ]]; then
+      err_line="$( (grep -n -i -E "${match_expr}" "${log_file}" || true) | tail -n1 | cut -d: -f1 )"
+    else
+      err_line="$( (grep -n -i -m1 -E "${match_expr}" "${log_file}" || true) | cut -d: -f1 )"
+    fi
+  fi
+  local start end
+  if [[ -n "${err_line}" ]]; then
+    start=$(( err_line > 40 ? err_line - 40 : 1 ))
+    end=$(( err_line + 60 ))
+  else
+    local total
+    total="$(wc -l < "${log_file}")"
+    start=$(( total > 200 ? total - 200 : 1 ))
+    end="${total}"
+  fi
+  echo "[LOG] ${label} (${log_file}#${start}-${end})"
+  sed -n "${start},${end}p" "${log_file}" | sed 's/^/  | /'
 }
 
 # ===== Generate → Normalize → Stage =====
@@ -356,6 +506,7 @@ build_one() {
   echo "[CMAKE] ${outdir#${BUILD_ROOT}/}"
   pushd "${outdir}" >/dev/null
     mkdir -p build && cd build
+    local build_log="${PWD}/_cmake_build.log"
     CMAKE_ARGS=(
       -DCMAKE_BUILD_TYPE=Release
       -DCMAKE_CXX_STANDARD=17
@@ -370,19 +521,31 @@ build_one() {
       popd >/dev/null; FAILED_BUILD+=("${outdir} (configure)"); return
     fi
 
-    # 先に SWIG だけ回し、wrap を正規化 → その後本ビルド
-    local base; base="$(basename "$(ls -1 ../*.i | head -n1)" .i 2>/dev/null || echo '')"
-    if [[ -n "$base" ]]; then
-      cmake --build . --target "${base}Wrapper_swig_compilation" > _cmake_swig.log 2>&1 || true
+    # 先に存在する SWIG ターゲットを全てビルドし、wrap を正規化
+    local -a SWIG_BASES=()
+    while IFS= read -r i_path; do
+      SWIG_BASES+=("$i_path")
+    done < <(find .. -maxdepth 1 -type f -name "*.i" -print | sort)
+    if [[ ${#SWIG_BASES[@]} -gt 0 ]]; then
+      echo "[INFO] Pre-building SWIG wrappers (${#SWIG_BASES[@]})"
+      for i_path in "${SWIG_BASES[@]}"; do
+        local base; base="$(basename "${i_path}" .i)"
+        [[ -z "$base" ]] && continue
+        local tgt="${base}Wrapper_swig_compilation"
+        echo "  [SWIG] ${tgt}"
+        cmake --build . --target "${tgt}" > "_cmake_swig_${base}.log" 2>&1 || true
+      done
       normalize_tree_py "$(pwd)"
+      assert_no_long_containers "$(pwd)"
     fi
 
-    if ! cmake --build . -j "${JOBS}" > _cmake_build.log 2>&1; then
+    if ! cmake --build . -j "${JOBS}" > "${build_log}" 2>&1; then
       normalize_tree_py "$(pwd)"
-      echo "[ERR]  cmake build failed: ${outdir#${BUILD_ROOT}/} — retrying -j1 after normalize"
-      cmake --build . -j 1 >> _cmake_build.log 2>&1 || {
-        sed -n '1,220p' _cmake_build.log || true
-        tail -n 120 _cmake_build.log || true
+      assert_no_long_containers "$(pwd)"
+      echo "[ERR]  cmake build failed: ${outdir#${BUILD_ROOT}/} (log: ${build_log}) — retrying -j1 after normalize"
+      print_log_excerpt "${build_log}" "cmake build failure (-j ${JOBS})" "first"
+      cmake --build . -j 1 >> "${build_log}" 2>&1 || {
+        print_log_excerpt "${build_log}" "cmake build failure after -j1 retry" "last"
         popd >/dev/null; FAILED_BUILD+=("${outdir} (build)"); return
       }
     fi

@@ -2,6 +2,8 @@
 
 **lwrclpy** is an rclpy-compatible Python library built directly on Fast DDS v3. It ships ROS-like APIs (`Node`, `QoS`, `publisher`, `subscription`, `spin`) without ROS 2 distro/ABI constraints. Message fields can be set with ROS 2–style setters (`msg.data("hi")`) or plain attributes (`msg.data = "hi"`); lwrclpy clones messages on publish/receive so both styles work.
 
+> ✅ **Now tested end-to-end on macOS Sonoma (Apple Silicon)** — full Fast DDS v3 toolchain, ROS DataTypes generation, and packaged wheels are available via the scripts under `scripts/mac/`. Linux (Ubuntu) instructions remain unchanged.
+
 > Tested on Ubuntu 24.04 with Python 3.12.
 
 ---
@@ -9,11 +11,12 @@
 ## Contents
 
 1. [Quickstart (prebuilt wheel)](#quickstart-prebuilt-wheel)
-2. [Full build & package from this repo](#full-build--package-from-this-repo)
-3. [Examples](#examples)
-4. [ROS 2 interoperability](#ros-2-interoperability)
-5. [Troubleshooting](#troubleshooting)
-6. [License](#license)
+2. [macOS setup (Homebrew + scripts)](#macos-setup-homebrew--scripts)
+3. [Full build & package from this repo](#full-build--package-from-this-repo)
+4. [Examples](#examples)
+5. [ROS 2 interoperability](#ros-2-interoperability)
+6. [Troubleshooting](#troubleshooting)
+7. [License](#license)
 
 ---
 
@@ -47,6 +50,56 @@ print("vendored fastdds present:",
       os.path.exists(os.path.join(root, "_vendor", "fastdds", "_fastdds_python.so")))
 PY
 ```
+
+---
+
+## macOS setup (Homebrew + scripts)
+
+The repository now ships dedicated scripts under `scripts/mac/` so Apple Silicon (Sonoma) can run Fast DDS v3 + lwrclpy natively.
+
+1. **Install Homebrew (if needed)**  
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+   Then add Homebrew to your shell (`eval "$(/opt/homebrew/bin/brew shellenv)"` for Apple Silicon).
+
+2. **Install Xcode Command Line Tools + core deps**  
+   ```bash
+   xcode-select --install   # once
+   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
+   ```
+
+3. **Install Fast DDS v3 stack (colcon + fastdds_python)**  
+   ```bash
+   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
+   ```
+   This builds and installs everything under `/opt/fast-dds-v3` and `/opt/fast-dds-gen-v3`, pinning standalone Asio 1.12.x so legacy APIs still work.
+
+4. **Generate & install ROS DataTypes**  
+   ```bash
+   bash scripts/mac/mac_install_ros_data_types.sh
+   ```
+   This mirrors the IDL tree, runs Fast DDS Gen, builds every package, installs them into `/opt/fast-dds-v3-libs/python/src`, and exports `PYTHONPATH` / `DYLD_LIBRARY_PATH`. Service Request/Response aliases are also injected automatically.
+
+5. **(Optional) Build a macOS wheel with bundled runtime**  
+   ```bash
+   python3 -m venv venv && source venv/bin/activate
+   bash scripts/mac/mac_make_pip_package_with_runtime.sh
+   pip install dist/lwrclpy-*-macosx*.whl
+   ```
+   The wheel contains the generated ROS packages, vendored `fastdds` module, and Fast DDS native libraries, so you can run the examples without touching `/opt`.
+
+6. **Sanity check**
+   ```bash
+   python3 - <<'PY'
+   import lwrclpy, os
+   print("lwrclpy:", lwrclpy.__file__)
+   from std_msgs.msg import String
+   print("std_msgs OK:", String)
+   PY
+   ```
+
+以降の Example や Troubleshooting は Linux / macOS 共通です。必要なら `~/.zshrc` に追加された `export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` などを確認してください。
 
 ---
 
@@ -182,6 +235,8 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 
 **lwrclpy** は Fast DDS v3 上に直接構築した rclpy 互換の Python ライブラリです。ROS 2 のディストリ/ABI 制約を避けながら、`Node` / `QoS` / `publisher` / `subscription` / `spin` といった ROS 風 API を提供します。メッセージフィールドは ROS 2 風のセッター（`msg.data("hi")`）でも属性代入（`msg.data = "hi"`）でも設定でき、publish/receive 時にクローンされるためどちらのスタイルも使えます。
 
+> ✅ **macOS Sonoma (Apple Silicon) 対応** — `scripts/mac/` 以下のスクリプトで Fast DDS v3 ツールチェーン、ROS DataTypes 生成、ランタイム同梱ホイールまで一通り動作確認済みです。Linux (Ubuntu) 向け手順はこれまで通りです。
+
 > Ubuntu 24.04 / Python 3.12 で動作確認済み。
 
 ---
@@ -189,11 +244,12 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 ## 目次
 
 1. [クイックスタート（事前ビルド済みホイール）](#クイックスタート事前ビルド済みホイール)
-2. [このリポジトリからビルドしてパッケージ化](#このリポジトリからビルドしてパッケージ化)
-3. [サンプル](#サンプル)
-4. [ROS 2 との相互運用](#ros-2-との相互運用)
-5. [トラブルシューティング](#トラブルシューティング)
-6. [ライセンス](#ライセンス)
+2. [macOS セットアップ（Homebrew + スクリプト）](#macos-セットアップhomebrew--スクリプト)
+3. [このリポジトリからビルドしてパッケージ化](#このリポジトリからビルドしてパッケージ化)
+4. [サンプル](#サンプル)
+5. [ROS 2 との相互運用](#ros-2-との相互運用)
+6. [トラブルシューティング](#トラブルシューティング)
+7. [ライセンス](#ライセンス)
 
 ---
 
@@ -227,6 +283,56 @@ print("vendored fastdds present:",
       os.path.exists(os.path.join(root, "_vendor", "fastdds", "_fastdds_python.so")))
 PY
 ```
+
+---
+
+## macOS セットアップ（Homebrew + スクリプト）
+
+`scripts/mac/` 配下には Apple Silicon (Sonoma) で Fast DDS v3 + lwrclpy を動かすための専用スクリプトが揃っています。
+
+1. **Homebrew をインストール（未導入なら）**  
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+   Apple Silicon の場合は `eval "$(/opt/homebrew/bin/brew shellenv)"` でパスを通してください。
+
+2. **Xcode Command Line Tools + 依存パッケージ**  
+   ```bash
+   xcode-select --install   # 初回のみ
+   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
+   ```
+
+3. **Fast DDS v3 スタック（colcon + fastdds_python）をインストール**  
+   ```bash
+   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
+   ```
+   `/opt/fast-dds-v3` / `/opt/fast-dds-gen-v3` にツールチェーン一式が展開され、旧 Asio 1.12.x を優先するように構成されます。
+
+4. **ROS DataTypes の生成・インストール**  
+   ```bash
+   bash scripts/mac/mac_install_ros_data_types.sh
+   ```
+   IDL ミラーリング → fastddsgen → SWIG ビルド → `/opt/fast-dds-v3-libs/python/src` へのインストールまで自動化され、`PYTHONPATH` / `DYLD_LIBRARY_PATH` もエクスポートされます（`~/.zshrc` に追記されるため次回以降のシェルでも有効）。
+
+5. **（任意）ランタイム同梱ホイールを macOS 向けに作成**  
+   ```bash
+   python3 -m venv venv && source venv/bin/activate
+   bash scripts/mac/mac_make_pip_package_with_runtime.sh
+   pip install dist/lwrclpy-*-macosx*.whl
+   ```
+   生成済み ROS パッケージや `fastdds` モジュール、`libfastdds.dylib` などをすべて同梱したホイールが `dist/` に出力されます。
+
+6. **動作確認**
+   ```bash
+   python3 - <<'PY'
+   import lwrclpy, os
+   print("lwrclpy:", lwrclpy.__file__)
+   from std_msgs.msg import String
+   print("std_msgs OK:", String)
+   PY
+   ```
+
+以降のサンプルやトラブルシュート手順は Linux と共通です。必要に応じて `PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` などがシェルに設定されているか確認してください。
 
 ---
 

@@ -8,7 +8,7 @@ set -euo pipefail
 
 # ========= Settings =========
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 : "${BUILD_ROOT:=}"                               # e.g., /path/to/repo/._types_python_build_v3
 : "${INSTALL_ROOT:=/opt/fast-dds-v3-libs/python/src}"  # Where Python pkgs will be installed
 
@@ -88,7 +88,17 @@ install_one(){
 
   log "[INST] ${pkg_dir}/${name}"
   "${INSTALL_BIN}" -m 0644 "${py_src}" "${dst_pkg}/${name}.py"
-  "${INSTALL_BIN}" -m 0755 "${so_wrapper}" "${dst_pkg}/$(basename "${so_wrapper}")"
+  local wrapper_basename wrapper_target
+  wrapper_basename="$(basename "${so_wrapper}")"
+  wrapper_target="${wrapper_basename}"
+  if [[ "${wrapper_target}" == *.dylib ]]; then
+    # Python extension modules on macOS must end with .so; rename the SWIG output.
+    wrapper_target="${wrapper_target%.dylib}.so"
+  fi
+  "${INSTALL_BIN}" -m 0755 "${so_wrapper}" "${dst_pkg}/${wrapper_target}"
+  if [[ "${wrapper_target}" != "${wrapper_basename}" && -e "${dst_pkg}/${wrapper_basename}" ]]; then
+    rm -f "${dst_pkg}/${wrapper_basename}"
+  fi
   [[ -n "${so_core}" ]] && "${INSTALL_BIN}" -m 0755 "${so_core}" "${dst_pkg}/$(basename "${so_core}")"
 
   # Re-export the class at package level for ROS-like import:
@@ -99,19 +109,17 @@ install_one(){
 }
 
 # ========= Scan and install all generated types =========
-# BSD find だけでディレクトリ列挙（depth=3: <pkg>/<ns>/<Type>）
+# depth=3 (<pkg>/<ns>/<Type>) ディレクトリのみ抽出
 TYPE_DIRS_FILE="$(mktemp)"
-find "${BUILD_ROOT}/src" -type d -print | while IFS= read -r d; do
+find "${BUILD_ROOT}/src" -mindepth 3 -maxdepth 3 -type d | while IFS= read -r d; do
   rel="${d#${BUILD_ROOT}/src/}"
-  # 3 セグメントだけ採用
-  seg_count="$(printf "%s" "$rel" | awk -F/ 'NF')"
-  if [[ "$seg_count" -eq 3 ]]; then
-    ns="$(printf "%s" "$rel" | cut -d/ -f2)"
-    case "$ns" in
+  [[ "$rel" == "$d" ]] && continue
+  IFS='/' read -r pkg ns type extra <<<"${rel}"
+  if [[ -n "${pkg}" && -n "${ns}" && -n "${type}" && -z "${extra:-}" ]]; then
+    case "${ns}" in
       msg|srv|action)
-        # そのディレクトリが生成物(.i)を持っているか簡易チェック（任意）
-        if [[ -f "${d}/"*.i || -f "${d}/CMakeLists.txt" ]]; then
-          echo "$d" >> "${TYPE_DIRS_FILE}"
+        if compgen -G "${d}"/*.i >/dev/null || [[ -f "${d}/CMakeLists.txt" ]]; then
+          echo "${d}" >> "${TYPE_DIRS_FILE}"
         fi
         ;;
     esac
