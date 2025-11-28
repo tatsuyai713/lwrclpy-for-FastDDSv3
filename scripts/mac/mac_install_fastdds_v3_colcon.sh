@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install Fast DDS v3 core + fastddsgen + fastdds_python via colcon into /opt/fast-dds-v3 (macOS).
-# No source patching. Force-uses an old standalone Asio (1.12.x) via -I include precedence,
+# Applies a macOS-specific Fast DDS patch to drop unsupported thread-affinity calls and
+# force-uses an old standalone Asio (1.12.x) via -I include precedence,
 # so legacy API like asio::io_service / address::from_string / obj.post(...) resolves.
 set -euo pipefail
 
@@ -115,6 +116,71 @@ log "Locating Fast-DDS source tree under ${WS}/src…"
 FASTDDS_DIR="$(find "${WS}/src" -maxdepth 2 -type d \( -iname fastdds -o -iname 'Fast-DDS' \) | head -n1 || true)"
 [ -n "${FASTDDS_DIR}" ] && [ -d "${FASTDDS_DIR}" ] || die "fastdds source tree not found under ${WS}/src"
 log "Found fastdds at: ${FASTDDS_DIR}"
+
+# ===== macOS-specific Fast DDS patching =====
+MAC_AFFINITY_FILE="${FASTDDS_DIR}/src/cpp/utils/threading/threading_osx.ipp"
+if [[ -f "${MAC_AFFINITY_FILE}" ]]; then
+  if grep -q "LWRCLPY_DISABLE_OSX_AFFINITY_PATCH" "${MAC_AFFINITY_FILE}"; then
+    log "macOS affinity patch already applied."
+  else
+    log "Patching Fast DDS to disable unsupported macOS thread affinity…"
+    export MAC_AFFINITY_FILE
+    python <<'PY'
+from pathlib import Path
+import os
+import sys
+
+target_path = Path(os.environ["MAC_AFFINITY_FILE"])
+marker = "LWRCLPY_DISABLE_OSX_AFFINITY_PATCH"
+text = target_path.read_text()
+if marker in text:
+    sys.exit(0)
+
+needle = "static void configure_current_thread_affinity"
+start = text.find(needle)
+if start == -1:
+    print(f"[patch] Unable to find '{needle}' inside {target_path}", file=sys.stderr)
+    sys.exit(1)
+
+brace_pos = text.find('{', start)
+if brace_pos == -1:
+    print("[patch] Unable to locate opening brace for affinity function", file=sys.stderr)
+    sys.exit(1)
+
+depth = 0
+end = None
+for idx in range(brace_pos, len(text)):
+    char = text[idx]
+    if char == '{':
+        depth += 1
+    elif char == '}':
+        depth -= 1
+        if depth == 0:
+            end = idx
+            break
+
+if end is None:
+    print("[patch] Unable to locate closing brace for affinity function", file=sys.stderr)
+    sys.exit(1)
+
+replacement = """static void configure_current_thread_affinity(
+        const char* thread_name,
+        uint64_t affinity)
+{
+    (void) thread_name;
+    (void) affinity;
+    // LWRCLPY_DISABLE_OSX_AFFINITY_PATCH: macOS lacks supported APIs to pin DDS threads, leave as no-op.
+}
+"""
+
+target_path.write_text(text[:start] + replacement + text[end + 1:])
+PY
+    unset MAC_AFFINITY_FILE
+    log "Applied macOS thread affinity patch to Fast DDS."
+  fi
+else
+  warn "macOS affinity patch skipped; file not found: ${MAC_AFFINITY_FILE}"
+fi
 
 # ===== fastddsgen build & install =====
 GEN_SRC_DIR="$(find "${WS}/src" -maxdepth 2 -type d \( -iname 'fastddsgen' -o -iname 'Fast-DDS-Gen' \) | head -n 1 || true)"
