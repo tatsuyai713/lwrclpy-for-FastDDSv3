@@ -11,8 +11,8 @@
 ## Contents
 
 1. [Quickstart (prebuilt wheel)](#quickstart-prebuilt-wheel)
-2. [macOS setup (Homebrew + scripts)](#macos-setup-homebrew--scripts)
-3. [Full build & package from this repo](#full-build--package-from-this-repo)
+2. [Full build & package from this repo](#full-build--package-from-this-repo)
+3. [Examples](#examples)
 4. [Examples](#examples)
 5. [ROS 2 interoperability](#ros-2-interoperability)
 6. [Troubleshooting](#troubleshooting)
@@ -50,56 +50,6 @@ print("vendored fastdds present:",
       os.path.exists(os.path.join(root, "_vendor", "fastdds", "_fastdds_python.so")))
 PY
 ```
-
----
-
-## macOS setup (Homebrew + scripts)
-
-The repository now ships dedicated scripts under `scripts/mac/` so Apple Silicon (Sonoma) can run Fast DDS v3 + lwrclpy natively.
-
-1. **Install Homebrew (if needed)**  
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   Then add Homebrew to your shell (`eval "$(/opt/homebrew/bin/brew shellenv)"` for Apple Silicon).
-
-2. **Install Xcode Command Line Tools + core deps**  
-   ```bash
-   xcode-select --install   # once
-   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
-   ```
-
-3. **Install Fast DDS v3 stack (colcon + fastdds_python)**  
-   ```bash
-   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
-   ```
-   This builds and installs everything under `/opt/fast-dds-v3` and `/opt/fast-dds-gen-v3`, pinning standalone Asio 1.12.x so legacy APIs still work.
-
-4. **Generate & install ROS DataTypes**  
-   ```bash
-   bash scripts/mac/mac_install_ros_data_types.sh
-   ```
-   This mirrors the IDL tree, runs Fast DDS Gen, builds every package, installs them into `/opt/fast-dds-v3-libs/python/src`, and exports `PYTHONPATH` / `DYLD_LIBRARY_PATH`. Service Request/Response aliases are also injected automatically.
-
-5. **(Optional) Build a macOS wheel with bundled runtime**  
-   ```bash
-   python3 -m venv venv && source venv/bin/activate
-   bash scripts/mac/mac_make_pip_package_with_runtime.sh
-   pip install dist/lwrclpy-*-macosx*.whl
-   ```
-   The wheel contains the generated ROS packages, vendored `fastdds` module, and Fast DDS native libraries, so you can run the examples without touching `/opt`.
-
-6. **Sanity check**
-   ```bash
-   python3 - <<'PY'
-   import lwrclpy, os
-   print("lwrclpy:", lwrclpy.__file__)
-   from std_msgs.msg import String
-   print("std_msgs OK:", String)
-   PY
-   ```
-
-Examples and troubleshooting sections below apply equally to Linux and macOS. If you ever need to re-check your environment, confirm that `~/.zshrc` contains the exported `PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` (and related `DYLD_LIBRARY_PATH`) entries.
 
 ---
 
@@ -150,6 +100,46 @@ python3 examples/pubsub/string/listener.py   # Terminal A
 python3 examples/pubsub/string/talker.py     # Terminal B
 ```
 
+### macOS manual build (Homebrew + scripts)
+
+Use the macOS helpers under `scripts/mac/` to mirror the full Ubuntu build flow on Apple hardware. The scripts install Fast DDS v3, fastddsgen, ROS DataTypes, and optionally produce a runtime-bundled wheel:
+
+1. Install Homebrew (if needed), add it to your shell, and refresh the Apple toolchain:
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+2. Install Xcode CLT and the required dependencies:
+   ```bash
+   xcode-select --install   # execute once
+   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
+   ```
+3. Build Fast DDS v3, fastddsgen, and the Python bindings:
+   ```bash
+   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
+   ```
+4. Generate and install the ROS DataTypes:
+   ```bash
+   bash scripts/mac/mac_install_ros_data_types.sh
+   ```
+5. (Optional) Inside a venv, build the runtime-bundled wheel and install it:
+   ```bash
+   python3 -m venv venv && source venv/bin/activate
+   bash scripts/mac/mac_make_pip_package_with_runtime.sh
+   pip install dist/lwrclpy-*-macosx*.whl
+   ```
+6. Sanity check that `lwrclpy` and `std_msgs` import successfully:
+   ```bash
+   python3 - <<'PY'
+   import lwrclpy, os
+   print("lwrclpy:", lwrclpy.__file__)
+   from std_msgs.msg import String
+   print("std_msgs OK:", String)
+   PY
+   ```
+
+The scripts export the same `PYTHONPATH` / `DYLD_LIBRARY_PATH` contents as the Ubuntu flow, so the remaining samples and troubleshooting guidance apply unchanged.
+
 The repository now ships a drop-in `rclpy` shim, so you can launch the official ROS 2 samples without edits. From this repo’s root:
 
 ```bash
@@ -169,6 +159,8 @@ python3 third_party/ros2_examples/rclpy/topics/minimal_subscriber/examples_rclpy
 - Actions: `examples/actions/{fibonacci_action_server.py,fibonacci_action_client.py}` demonstrates the bundled action server/client.
 - Guard conditions: `examples/guard_condition/trigger_guard_condition.py` demonstrates `Node.create_guard_condition`.
 - ML demo with PyTorch: `examples/pubsub/ml/` (requires your ML deps).
+
+> **Note:** On macOS the listener/talker processes may take several extra seconds to reach the running state, so wait for their initial output before assuming the launch failed.
 
 For parity testing you can also run the unmodified ROS 2 rclpy samples mirrored in `third_party/ros2_examples/rclpy/…` thanks to the bundled compatibility shim. Service aliases (e.g., `SetBool.Request`) are auto-generated when you run `scripts/install_ros_data_types.sh`, so plain `from std_msgs.srv import SetBool` works exactly like upstream ROS 2.
 
@@ -245,8 +237,8 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 ## 目次
 
 1. [クイックスタート（事前ビルド済みホイール）](#クイックスタート事前ビルド済みホイール)
-2. [macOS セットアップ（Homebrew + スクリプト）](#macos-セットアップhomebrew--スクリプト)
-3. [このリポジトリからビルドしてパッケージ化](#このリポジトリからビルドしてパッケージ化)
+2. [このリポジトリからビルドしてパッケージ化](#このリポジトリからビルドしてパッケージ化)
+3. [サンプル](#サンプル)
 4. [サンプル](#サンプル)
 5. [ROS 2 との相互運用](#ros-2-との相互運用)
 6. [トラブルシューティング](#トラブルシューティング)
@@ -286,57 +278,6 @@ PY
 ```
 
 ---
-
-## macOS セットアップ（Homebrew + スクリプト）
-
-`scripts/mac/` 配下には Apple Silicon (Sonoma) で Fast DDS v3 + lwrclpy を動かすための専用スクリプトが揃っています。
-
-1. **Homebrew をインストール（未導入なら）**  
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   Apple Silicon の場合は `eval "$(/opt/homebrew/bin/brew shellenv)"` でパスを通してください。
-
-2. **Xcode Command Line Tools + 依存パッケージ**  
-   ```bash
-   xcode-select --install   # 初回のみ
-   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
-   ```
-
-3. **Fast DDS v3 スタック（colcon + fastdds_python）をインストール**  
-   ```bash
-   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
-   ```
-   `/opt/fast-dds-v3` / `/opt/fast-dds-gen-v3` にツールチェーン一式が展開され、旧 Asio 1.12.x を優先するように構成されます。
-
-4. **ROS DataTypes の生成・インストール**  
-   ```bash
-   bash scripts/mac/mac_install_ros_data_types.sh
-   ```
-   IDL ミラーリング → fastddsgen → SWIG ビルド → `/opt/fast-dds-v3-libs/python/src` へのインストールまで自動化され、`PYTHONPATH` / `DYLD_LIBRARY_PATH` もエクスポートされます（`~/.zshrc` に追記されるため次回以降のシェルでも有効）。
-
-5. **（任意）ランタイム同梱ホイールを macOS 向けに作成**  
-   ```bash
-   python3 -m venv venv && source venv/bin/activate
-   bash scripts/mac/mac_make_pip_package_with_runtime.sh
-   pip install dist/lwrclpy-*-macosx*.whl
-   ```
-   生成済み ROS パッケージや `fastdds` モジュール、`libfastdds.dylib` などをすべて同梱したホイールが `dist/` に出力されます。
-
-6. **動作確認**
-   ```bash
-   python3 - <<'PY'
-   import lwrclpy, os
-   print("lwrclpy:", lwrclpy.__file__)
-   from std_msgs.msg import String
-   print("std_msgs OK:", String)
-   PY
-   ```
-
-以降のサンプルやトラブルシュート手順は Linux と共通です。必要に応じて `PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` などがシェルに設定されているか確認してください。
-
----
-
 ## このリポジトリからビルドしてパッケージ化
 
 Fast DDS v3 をインストールし、ROS DataTypes を生成した上で、ランタイム同梱ホイールを作ります。結果として `dist/lwrclpy-<version>-*.whl` が得られ、どの venv でも `pip install` できます。
@@ -383,6 +324,46 @@ python3 examples/pubsub/string/listener.py   # 端末 A
 python3 examples/pubsub/string/talker.py     # 端末 B
 ```
 
+### macOS での手動ビルド（Homebrew + スクリプト）
+
+`scripts/mac/` 以下のヘルパーを使えば、Ubuntu のフルビルド手順を macOS 上で同じように再現できます。Fast DDS v3、fastddsgen、ROS DataTypes、そして任意のランタイム同梱ホイールを順番に準備できます。
+
+1. Homebrew をインストールし、シェルにパスを通します（必要なら再実行）:
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+2. Xcode CLT とビルド依存を揃えます:
+   ```bash
+   xcode-select --install   # 初回のみ
+   brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3 python@3.11
+   ```
+3. Fast DDS v3、fastddsgen、Python バインディングをビルドします:
+   ```bash
+   bash scripts/mac/mac_install_fastdds_v3_colcon.sh
+   ```
+4. ROS DataTypes を生成・インストールします:
+   ```bash
+   bash scripts/mac/mac_install_ros_data_types.sh
+   ```
+5. 必要に応じて venv から runtime-bundled ホイールを作成・インストールします:
+   ```bash
+   python3 -m venv venv && source venv/bin/activate
+   bash scripts/mac/mac_make_pip_package_with_runtime.sh
+   pip install dist/lwrclpy-*-macosx*.whl
+   ```
+6. `lwrclpy` と `std_msgs` がインポートできるか確認します:
+   ```bash
+   python3 - <<'PY'
+   import lwrclpy, os
+   print("lwrclpy:", lwrclpy.__file__)
+   from std_msgs.msg import String
+   print("std_msgs OK:", String)
+   PY
+   ```
+
+これらのスクリプトは Ubuntu と同じ `PYTHONPATH` / `DYLD_LIBRARY_PATH` をエクスポートするので、以降のサンプルやトラブルシュートもそのまま使えます。
+
 ---
 
 ## サンプル
@@ -391,6 +372,8 @@ python3 examples/pubsub/string/talker.py     # 端末 B
 - Executor: `examples/executor/{single_node_spin.py,multithreaded_spin.py}`
 - Timers / Parameters / Services: `examples/timers/`, `examples/parameters/`, `examples/services/`
 - PyTorch を用いた ML デモ: `examples/pubsub/ml/`（必要に応じて ML 依存を導入）
+
+> **注意:** macOS ではリスナーやトーカーが起動後すぐに動作しないことがあり、状態が `RUNNING` になるまで数秒待ってから次の操作に移ってください。
 
 `third_party/ros2_examples/` に ROS 2 Jazzy ブランチの rclpy サンプルをそのまま配置しているため、`python3 third_party/ros2_examples/rclpy/...` のように実行すればオリジナルの rclpy コードをそのまま動かせます。`scripts/install_ros_data_types.sh` 実行時には Request/Response を束ねたサービスラッパー（`SetBool.Request` 等）が自動追加されるので、ROS 2 と同じ import で利用できます。
 
