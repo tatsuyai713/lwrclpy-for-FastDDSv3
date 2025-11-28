@@ -228,6 +228,7 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 
 - This repository: Apache-2.0  
 - Generated code includes eProsima Fast-DDS templates; follow their licenses where applicable.
+- rclpy-derived shims mirror the upstream Apache-2.0 license (see `rclpy/LICENSE` in this repo for attribution).
 
 ---
 
@@ -439,3 +440,4 @@ python3 examples/pubsub/string/talker.py     # 端末 B
 
 - 本リポジトリ: Apache-2.0  
 - 生成コードには eProsima Fast-DDS のテンプレートが含まれるため、該当箇所のライセンスにも従ってください。
+- rclpy 由来の互換レイヤーは Apache-2.0 ライセンスです（詳細は `rclpy/LICENSE` を参照）。
