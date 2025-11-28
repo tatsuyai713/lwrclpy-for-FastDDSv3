@@ -13,10 +13,9 @@
 1. [Quickstart (prebuilt wheel)](#quickstart-prebuilt-wheel)
 2. [Full build & package from this repo](#full-build--package-from-this-repo)
 3. [Examples](#examples)
-4. [Examples](#examples)
-5. [ROS 2 interoperability](#ros-2-interoperability)
-6. [Troubleshooting](#troubleshooting)
-7. [License](#license)
+4. [ROS 2 interoperability](#ros-2-interoperability)
+5. [Troubleshooting](#troubleshooting)
+6. [License](#license)
 
 ---
 
@@ -239,10 +238,9 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 1. [クイックスタート（事前ビルド済みホイール）](#クイックスタート事前ビルド済みホイール)
 2. [このリポジトリからビルドしてパッケージ化](#このリポジトリからビルドしてパッケージ化)
 3. [サンプル](#サンプル)
-4. [サンプル](#サンプル)
-5. [ROS 2 との相互運用](#ros-2-との相互運用)
-6. [トラブルシューティング](#トラブルシューティング)
-7. [ライセンス](#ライセンス)
+4. [ROS 2 との相互運用](#ros-2-との相互運用)
+5. [トラブルシューティング](#トラブルシューティング)
+6. [ライセンス](#ライセンス)
 
 ---
 
