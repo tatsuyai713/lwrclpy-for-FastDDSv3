@@ -99,7 +99,7 @@ The repository now ships dedicated scripts under `scripts/mac/` so Apple Silicon
    PY
    ```
 
-以降の Example や Troubleshooting は Linux / macOS 共通です。必要なら `~/.zshrc` に追加された `export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` などを確認してください。
+Examples and troubleshooting sections below apply equally to Linux and macOS. If you ever need to re-check your environment, confirm that `~/.zshrc` contains the exported `PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH` (and related `DYLD_LIBRARY_PATH`) entries.
 
 ---
 
