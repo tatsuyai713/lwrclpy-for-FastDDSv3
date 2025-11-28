@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# gen_python_types.sh — Fast DDS v3 + fastddsgen 4.x（macOS/BSD対応・再現性パッチ込み）
-#  - long/unsigned long 系→固定幅(int64_t/uint64_t)へ正規化
-#  - SWIG *_wrap.cxx の iterator/__wrap_iter なども統一・<cstdint>/<cstddef>注入
-#  - SWIG ヘルパ重複は #if 0 … #endif で無効化（安全）
-#  - 不足する SWIG ヘルパ（size_t/ptrdiff_t 系）を plain C で自動注入
-#  - SWIGINTERN / SWIGINTERNINLINE の重複 static を除去（duplicate 'static' 対策）
-#  - 生成→SWIGだけ先ビルド→wrap正規化→本ビルド（失敗時 -j1 リトライ）
+# gen_python_types.sh — Fast DDS v3 + fastddsgen 4.x (macOS/BSD friendly with reproducibility patches)
+#  - Normalize long/unsigned long types to fixed width (int64_t/uint64_t)
+#  - Unify iterator/__wrap_iter in SWIG *_wrap.cxx and inject <cstdint>/<cstddef>
+#  - Disable duplicate SWIG helpers via #if 0 … #endif blocks
+#  - Auto-inject missing SWIG helpers (size_t/ptrdiff_t) in plain C
+#  - Remove duplicate 'static' from SWIGINTERN / SWIGINTERNINLINE
+#  - Build flow: fastddsgen → SWIG-only build → wrap normalization → full build (retry with -j1 on failure)
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ BUILD_ROOT="${BUILD_ROOT:-${ROOT_DIR}/._types_python_build_v3}"
 GEN_SRC_ROOT="${BUILD_ROOT}/src"
 INC_STAGE_ROOT="${BUILD_ROOT}/include/src"
 
-PATCH_PY="${PATCH_PY:-${ROOT_DIR}/scripts/patch_fastdds_swig_v3.py}"   # 任意（存在すれば .i にも適用）
+PATCH_PY="${PATCH_PY:-${ROOT_DIR}/scripts/patch_fastdds_swig_v3.py}"   # optional (applied if present)
 
 detect_cores(){ if command -v sysctl >/dev/null 2>&1; then sysctl -n hw.ncpu; elif command -v nproc >/dev/null 2>&1; then nproc; else echo 4; fi; }
 JOBS="${JOBS:-$(detect_cores)}"
@@ -125,7 +125,7 @@ def replace_long_scalars(buf: str) -> str:
     return sub_many(buf, LONG_SCALAR_RULES)
 
 def ensure_header_includes(buf: str) -> str:
-    # 最初の #include の直後に <cstdint>/<cstddef> を注入
+    # Inject <cstdint>/<cstddef> immediately after the first #include
     m = re.search(r'^\s*#\s*include[^\n]*\n', buf, re.M)
     if m:
         pos = m.end()
@@ -137,14 +137,14 @@ def ensure_header_includes(buf: str) -> str:
     return buf
 
 def fix_swig_macros(buf: str) -> str:
-    # duplicate 'static' を避けるため SWIGINTERN の static を外す / SWIGINTERNINLINE は SWIGINLINE のみ
+    # Avoid duplicate 'static': drop static from SWIGINTERN and reduce SWIGINTERNINLINE to SWIGINLINE
     buf = re.sub(r'(^\s*#\s*define\s+SWIGINTERN\s+)static(\s+SWIGUNUSED\s*$)', r'\1\2', buf, flags=re.M)
     buf = re.sub(r'(^\s*#\s*define\s+SWIGINTERNINLINE\s+)SWIGINTERN\s+SWIGINLINE\s*$', r'\1SWIGINLINE', buf, flags=re.M)
     return buf
 
 def strip_long_alias_macros(buf: str) -> str:
-    # SWIG 4.4 (macOS) では SWIG_From_int64_t などが PyLong_* へ alias され、
-    # 後段で注入する helper と衝突するため除去する。
+    # SWIG 4.4 (macOS) aliases SWIG_From_int64_t etc. to PyLong_* and clashes with injected helpers.
+    # Remove those aliases before appending custom helpers.
     targets = [
         r'SWIG_AsVal_int64_t',
         r'SWIG_From_int64_t',
@@ -157,7 +157,7 @@ def strip_long_alias_macros(buf: str) -> str:
     return buf
 
 def fix_uint64_printf(buf: str) -> str:
-    # uint64_t → %llu に統一（macOS clang の -Wformat 対策）
+    # Normalize printf formatting (macOS clang -Wformat prefers %llu for uint64_t)
     replacements = {
         '"attempt to assign sequence of size %lu to extended slice of size %lu"':
             '"attempt to assign sequence of size %llu to extended slice of size %llu"',
@@ -196,7 +196,7 @@ def helper_defs_from_lines(block_lines):
     return names
 
 def disable_longlong_dups(buf: str) -> str:
-    # SWIG_LONG_LONG_AVAILABLE ブロック内の重複 helper を丸ごと無効化
+    # Disable duplicate helper blocks under SWIG_LONG_LONG_AVAILABLE entirely
     lines = buf.splitlines()
     out = []
     defined = set()
@@ -300,7 +300,7 @@ static inline PyObject * SWIG_From_ptrdiff_t (ptrdiff_t value) {
 """
 
 def append_helper_if_missing(buf: str, name: str, code: str) -> str:
-    # 参照あり・定義無しなら末尾へ追加
+    # Append helper if referenced but not defined
     ref = re.search(rf'\b{name}\s*\(', buf) is not None
     defd = re.search(rf'^\s*(?:static\s+inline|static|SWIGINTERNINLINE|SWIGINTERN)\s+[A-Za-z_][A-Za-z_0-9:\s\*]*\b{name}\s*\(', buf, re.M) is not None
     if ref and not defd:
@@ -309,7 +309,7 @@ def append_helper_if_missing(buf: str, name: str, code: str) -> str:
     return buf
 
 def normalize_text(buf: str, is_wrap: bool) -> str:
-    # (0) マングル名先に正規化
+    # (0) Normalize mangled symbol names up front
     buf = sub_many(buf, [
         (r'std_vector_Sl_long',                 r'std_vector_Sl_int64_t', 0),
         (r'std_vector_Sl_unsigned_long',        r'std_vector_Sl_uint64_t',0),
@@ -323,7 +323,7 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
         (r'_Sl_unsigned_long_Sg_',              r'_Sl_uint64_t_Sg_',0),
     ])
 
-    # (1) STLテンプレ/反復子
+    # (1) Rewrite STL templates / iterators
     buf = sub_many(buf, [
         (r'std::array<\s*long(?:\s+long)?\s*,',          r'std::array<int64_t,', 0),
         (r'std::array<\s*unsigned\s+long(?:\s+long)?\s*,',r'std::array<uint64_t,',0),
@@ -341,12 +341,12 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
         (r'(?<!\w)iterator<\s*unsigned\s+long(?:\s+long)?\s*\*>',r'iterator<uint64_t *>', 0),
     ])
 
-    # (2) long 系を固定幅へ
+    # (2) Convert remaining long forms to fixed-width types
     buf = replace_long_scalars(buf)
     buf = normalize_vector_templates(buf)
     buf = replace_long_scalars(buf)
 
-    # (3) SWIG の long/unsigned long 別名を 64bit 名へ
+    # (3) Rewrite SWIG aliases for long/unsigned long to 64-bit equivalents
     buf = sub_many(buf, [
         (r'SWIG_AsVal_unsigned_SS_long_SS_long', r'SWIG_AsVal_uint64_t', 0),
         (r'SWIG_AsVal_unsigned_SS_long',         r'SWIG_AsVal_uint64_t', 0),
@@ -363,9 +363,9 @@ def normalize_text(buf: str, is_wrap: bool) -> str:
     buf = disable_longlong_dups(buf)
 
     if is_wrap:
-        buf = fix_swig_macros(buf)      # duplicate static 修正
+        buf = fix_swig_macros(buf)      # fix duplicate static qualifiers
         buf = ensure_header_includes(buf)
-        # 不足ヘルパ補完
+        # Add missing helpers
         buf = append_helper_if_missing(buf, 'SWIG_AsVal_size_t', HELPER_SIZE_T)
         buf = append_helper_if_missing(buf, 'SWIG_From_size_t',  HELPER_SIZE_T)
         buf = append_helper_if_missing(buf, 'SWIG_AsVal_ptrdiff_t', HELPER_PTRDIFF_T)
@@ -402,7 +402,7 @@ assert_no_long_containers() {
   local tree="$1"; [[ -d "$tree" ]] || return 0
   local pat='(std::array<\s*(unsigned\s+)?long(\s+long)?\s*,)|(std::vector<\s*(unsigned\s+)?long(\s+long)?(\s*,\s*[^>]+)?>)|(std::allocator<\s*(unsigned\s+)?long(\s+long)?\s*>)|(__wrap_iter<\s*(unsigned\s+)?long(\s+long)?\s*\*>)|((^|[^A-Za-z_])reverse_iterator<\s*(unsigned\s+)?long(\s+long)?\s*\*>)|((^|[^A-Za-z_])iterator<\s*(unsigned\s+)?long(\s+long)?\s*\*>)'
   if grep -RsnE --include='*.i' --include='*.hpp' --include='*.h' --include='*.hh' --include='*.hxx' --include='*.cxx' --include='*_wrap.cxx' "$pat" "$tree" >/dev/null 2>&1; then
-    echo "[FATAL] long/long long の残骸: ${tree}" >&2
+    echo "[FATAL] Residual long/long long usage found: ${tree}" >&2
     grep -RsnE --include='*.i' --include='*.hpp' --include='*.h' --include='*.hh' --include='*.hxx' --include='*.cxx' --include='*_wrap.cxx' "$pat" "$tree" | sed 's/^/  /' >&2 || true
     exit 1
   fi
@@ -521,7 +521,7 @@ build_one() {
       popd >/dev/null; FAILED_BUILD+=("${outdir} (configure)"); return
     fi
 
-    # 先に存在する SWIG ターゲットを全てビルドし、wrap を正規化
+    # Build every available SWIG target first, normalize wraps, then do full build
     local -a SWIG_BASES=()
     while IFS= read -r i_path; do
       SWIG_BASES+=("$i_path")

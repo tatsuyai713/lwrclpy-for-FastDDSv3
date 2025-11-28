@@ -67,7 +67,7 @@ install_one(){
   [[ -f "${bld}/${name}.py" ]] && py_src="${bld}/${name}.py"
 
   # _NameWrapper.* (extension module) — prefer .so, but accept anything
-  # macOS でも Python 拡張は通常 .so
+  # Python extension modules on macOS are typically .so
   so_wrapper="$(find "${bld}" -maxdepth 1 -type f -name "_${name}Wrapper.*" | sort | head -n1 || true)"
 
   # The core shared lib produced by CMake (either .so or .dylib)
@@ -109,7 +109,7 @@ install_one(){
 }
 
 # ========= Scan and install all generated types =========
-# depth=3 (<pkg>/<ns>/<Type>) ディレクトリのみ抽出
+# depth=3 (<pkg>/<ns>/<Type>) directories only
 TYPE_DIRS_FILE="$(mktemp)"
 find "${BUILD_ROOT}/src" -mindepth 3 -maxdepth 3 -type d | while IFS= read -r d; do
   rel="${d#${BUILD_ROOT}/src/}"
@@ -126,7 +126,7 @@ find "${BUILD_ROOT}/src" -mindepth 3 -maxdepth 3 -type d | while IFS= read -r d;
   fi
 done
 
-# 重複排除
+# Deduplicate list
 TYPE_DIRS_SORTED="$(mktemp)"
 sort -u "${TYPE_DIRS_FILE}" > "${TYPE_DIRS_SORTED}"
 rm -f "${TYPE_DIRS_FILE}"

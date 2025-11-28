@@ -41,10 +41,10 @@ BREW_PREFIX="$(brew --prefix)"
 
 log "Installing build deps via Homebrew…"
 brew update
-# NOTE: standalone 'asio' は入れない（新しすぎるAPIが入ってしまうため）
+# NOTE: skip standalone 'asio' (newer APIs break legacy Fast DDS usage)
 brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3
 
-# Java（Fast-DDS-Gen 用）
+# Java (for Fast-DDS-Gen)
 if ! /usr/libexec/java_home -V >/dev/null 2>&1; then
   brew install openjdk@17
   sudo ln -sf "${BREW_PREFIX}/opt/openjdk@17/libexec/openjdk.jdk" /Library/Java/JavaVirtualMachines/openjdk-17.jdk || true
@@ -79,7 +79,7 @@ vcs import --recursive src < "${REPOS_FILE}"
 
 # ===== Bring old standalone Asio headers (1.12.x) =====
 # Asio 1.12.2 tarball URL: https://sourceforge.net/projects/asio/files/asio/1.12.2%20%28Stable%29/asio-1.12.2.tar.bz2/download
-# もしくは https://github.com/chriskohlhoff/asio/releases/tag/asio-1-12-2
+# Alternatively: https://github.com/chriskohlhoff/asio/releases/tag/asio-1-12-2
 ASIO_DIR="${WS}/.deps/asio-${ASIO_VER}"
 if [[ ! -d "${ASIO_DIR}/include" ]]; then
   log "Fetching standalone Asio ${ASIO_VER} headers…"
@@ -91,7 +91,7 @@ if [[ ! -d "${ASIO_DIR}/include" ]]; then
         "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-${ASIO_VER//./-}.tar.gz"
       ;;
     *)
-      # GitHub のタグ表記に合わせる
+      # Match GitHub tag naming scheme
       curl -fL -o ".deps/asio-${ASIO_VER}.tar.gz" \
         "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-${ASIO_VER//./-}.tar.gz"
       ;;
@@ -101,7 +101,7 @@ if [[ ! -d "${ASIO_DIR}/include" ]]; then
   else
     tar -C ".deps" -xzf ".deps/asio-${ASIO_VER}.tar.gz"
   fi
-  # フォルダ名の揺れに対応
+  # Normalize folder name variations
   if [[ ! -d "${ASIO_DIR}" ]]; then
     ASIO_DIR_FALLBACK="$(find ".deps" -maxdepth 1 -type d -name "asio-*" | grep "${ASIO_VER//./-}\|${ASIO_VER}" | head -n1 || true)"
     [[ -n "${ASIO_DIR_FALLBACK}" ]] && ASIO_DIR="${ASIO_DIR_FALLBACK}"
@@ -157,7 +157,7 @@ sudo chown "$(id -u)":"$(id -g)" "${PREFIX_V3}"
 PY_EXEC="$(command -v python)"
 CMAKE_PREFIX_PATH="${PREFIX_V3}:${BREW_PREFIX}"
 
-# 推定（初回は空でOK）
+# Best-guess defaults (initial run may be empty)
 FOONATHAN_DIR_CAND1="${PREFIX_V3}/lib/foonathan_memory/cmake"
 FOONATHAN_DIR_CAND2="${PREFIX_V3}/lib/cmake/foonathan_memory"
 FOONATHAN_DIR="${FOONATHAN_DIR_CAND1}"; [[ -d "${FOONATHAN_DIR_CAND2}" ]] && FOONATHAN_DIR="${FOONATHAN_DIR_CAND2}"
@@ -169,9 +169,9 @@ FASTCDR_DIR="${FASTCDR_DIR_CAND1}"; [[ -d "${FASTCDR_DIR_CAND2}" ]] && FASTCDR_D
 log "Using foonathan_memory_DIR=${FOONATHAN_DIR}"
 log "Using fastcdr_DIR=${FASTCDR_DIR}"
 
-# 重要: 古い standalone Asio を明示的に優先させるため -I を追加。
-#       Fast-DDS 側が ASIO_STANDALONE を付けるので、そのまま standalone で通します。
-#       SHM は一旦無効化して安定化（必要なら後でONにして再ビルド可能）。
+# Ensure old standalone Asio headers take precedence via explicit -I.
+# Fast DDS sets ASIO_STANDALONE, so standalone headers must be found first.
+# Disable SHM transport for stability; re-enable later if needed.
 CMAKE_COMMON_ARGS=(
   -G Ninja
   -DCMAKE_BUILD_TYPE=Release
@@ -182,7 +182,7 @@ CMAKE_COMMON_ARGS=(
   -Dfoonathan_memory_DIR="${FOONATHAN_DIR}"
   -Dfastcdr_DIR="${FASTCDR_DIR}"
   -DCMAKE_MACOSX_RPATH=ON
-  # ← ここがキモ: 旧Asioのヘッダを優先解決させる
+  # Key point: prioritize legacy Asio headers
   -DCMAKE_CXX_FLAGS="-I${ASIO_DIR}/include"
   -DCMAKE_C_FLAGS="-I${ASIO_DIR}/include"
   -DFASTDDS_SHM_TRANSPORT_DEFAULT=OFF
@@ -221,9 +221,8 @@ PY
 # Notes:
 # - We DO NOT install Homebrew 'asio'. We pin standalone Asio to 1.12.x and put its include first via -I.
 # - If you previously installed 'asio' via Homebrew, it won't hurt because -I${ASIO_DIR}/include wins over -isystem /opt/homebrew/include.
-# - If you need SHM transport, rebuild with -DFASTDDS_SHM_TRANSPORT_DEFAULT=ON after基本動作確認.
+# - If you need SHM transport, rebuild with -DFASTDDS_SHM_TRANSPORT_DEFAULT=ON after confirming stability.
 # - If you experimented earlier, clean: rm -rf build install log && re-run this script.
-# - Change Asio version with:  --asio-ver 1.12.2  (default) / 1.12.1 など
+# - Change Asio version with:  --asio-ver 1.12.2  (default) / 1.12.1 etc.
 ========================================
 EOF | sed "s|__GEN_PREFIX__|${GEN_PREFIX}|g; s|__PREFIX_V3__|${PREFIX_V3}|g"
-

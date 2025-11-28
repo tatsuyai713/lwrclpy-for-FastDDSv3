@@ -30,7 +30,7 @@ echo "[INFO] Checking swig version…"
 hash -r
 which swig
 swig -version | sed -n '1,8p'
-# ソフトに 4.1 系を推奨。4.0 や 4.2 でも通る構成が多いが、必要ならここでバージョンを厳密チェック。
+# Recommend SWIG 4.1.x (4.0/4.2 may work, but pin if your env needs it).
 SWIG_VER_RAW="$(swig -version | awk -F'[ ]' '/SWIG Version/ {print $3; exit}')"
 SWIG_MAJ="${SWIG_VER_RAW%%.*}"
 SWIG_MIN_PATCH="${SWIG_VER_RAW#*.}"            # e.g. "1.1"
@@ -104,8 +104,7 @@ sudo mkdir -p "${TARGET_LIB_DIR}"
 # broken symlinks cleanup
 sudo find "${TARGET_LIB_DIR}" -type l ! -exec test -e {} \; -delete || true
 
-# BSD find 互換で .so / .dylib の両方を集約
-# (Python拡張は .so、C++共有ライブラリは .dylib のことが多い)
+# Collect both .so and .dylib (Python extensions usually .so, core libs often .dylib)
 find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.dylib' \) -print0 \
   | while IFS= read -r -d '' sofile; do
       bn="$(basename "$sofile")"
@@ -116,20 +115,15 @@ find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.
     done
 
 # --- 4) export runtime paths for this shell session (macOS uses DYLD_LIBRARY_PATH) ---
-# 集約ディレクトリ + 各生成libの所在ディレクトリを追加
 echo "[INFO] Exporting environment variables for current shell…"
-# 生成された lib*.so/.dylib を含むディレクトリ一覧を組み立て（BSD find 互換）
 ADD_DYLD_DIRS=""
-# ユニーク化のため一旦一時ファイルへ
 _tmp_dirs="$(mktemp)"
 find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.dylib' \) -print0 \
   | while IFS= read -r -d '' f; do
       dirname "$f"
     done | sort -u > "${_tmp_dirs}"
 if [[ -s "${_tmp_dirs}" ]]; then
-  # 改行を : に変換
   ADD_DYLD_DIRS="$(tr '\n' ':' < "${_tmp_dirs}")"
-  # 末尾の : を落とす
   ADD_DYLD_DIRS="${ADD_DYLD_DIRS%:}"
 fi
 rm -f "${_tmp_dirs}"
@@ -143,7 +137,6 @@ fi
 export DYLD_LIBRARY_PATH="${DYLD_COMBINED}"
 export PYTHONPATH="/opt/fast-dds-v3-libs/python/src:${PYTHONPATH:-}"
 
-# Fast-DDS Python (merge-install 側) があれば追加
 PY_SITE_PACK="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr ' ' ':')"
 if [[ -n "${PY_SITE_PACK}" ]]; then
   export PYTHONPATH="${PY_SITE_PACK}:${PYTHONPATH}"
@@ -170,26 +163,20 @@ touch "$ZSHRC"
 add_line_once() {
   local line="$1"
   local file="$2"
-  # そのままの行が既にあれば追記しない
   grep -qxF "$line" "$file" || echo "$line" >> "$file"
 }
 
 echo "[INFO] Persisting environment to ${ZSHRC} …"
-# (a) Generated Python packages
 add_line_once 'export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH' "$ZSHRC"
-
-# (b) Fast-DDS Python site-packages (if available at runtime)
 add_line_once 'export PYTHONPATH="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr '\'' '\'' :):$PYTHONPATH"' "$ZSHRC"
-
-# (c) Shared libraries: central dir + (fallback) all lib dirs (BSD find 互換版)
 add_line_once 'export DYLD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:$DYLD_LIBRARY_PATH' "$ZSHRC"
 add_line_once 'export DYLD_LIBRARY_PATH="$(find /opt/fast-dds-v3-libs/python/src -type f \( -name '\''lib*.so'\'' -o -name '\''lib*.dylib'\'' \) -print0 | xargs -0 -I{} dirname {} | sort -u | paste -sd: -):$DYLD_LIBRARY_PATH"' "$ZSHRC"
 
 cat <<'NOTE'
 [NOTE]
-- macOS では GUI アプリからは SIP の影響で DYLD_LIBRARY_PATH が無視されます（Terminal 上は有効）。
-- このスクリプトは Homebrew の swig を使います。必要なら `brew unlink swig@X && brew link swig@Y` で切替えてください。
-- 反映を永続化したので、新しいシェルで有効になります。すぐ反映したい場合は:
+- DYLD_LIBRARY_PATH is ignored for GUI apps due to SIP (Terminal sessions honor it).
+- This script relies on Homebrew swig; switch via `brew unlink swig@X && brew link swig@Y` if needed.
+- Environment exports were appended to ~/.zshrc. To apply immediately:
     source ~/.zshrc
 NOTE
 
