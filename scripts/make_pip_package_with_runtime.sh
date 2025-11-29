@@ -113,6 +113,16 @@ _vendor_parent = os.path.join(_pkg_dir, "_vendor")
 _vendor_lib = os.path.join(_vendor_parent, "lib")      # libfastdds.so, libfastcdr.so
 _vendor_fastdds = os.path.join(_vendor_parent, "fastdds")
 
+def _prune_opt_paths():
+    prefix = os.path.normpath("/opt/fast-dds-v3-libs/python/src")
+    normalized = os.path.normpath(prefix)
+    new_path = []
+    for entry in sys.path:
+        if entry and os.path.normpath(entry).startswith(normalized):
+            continue
+        new_path.append(entry)
+    sys.path[:] = new_path
+
 def _preload_libs(d):
     if not os.path.isdir(d):
         return
@@ -136,6 +146,8 @@ def _preload_ros_msg_libs():
                     pass
 
 def ensure_fastdds():
+    _prune_opt_paths()
+
     # 1) preload core native libs
     _preload_libs(_vendor_lib)
 
