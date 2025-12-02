@@ -4,7 +4,7 @@
 #   2) Generate & build Fast DDS Python message bindings (delegates to gen_python_types.sh).
 #   3) Install generated Python packages into /opt/fast-dds-v3-libs/python/src (delegates to install_python_types.sh).
 #   4) Collect all generated lib*.so into a single directory (/opt/fast-dds-v3-libs/lib) and update runtime paths.
-#   5) Export environment variables for the current shell and append persistent exports to ~/.bashrc.
+#   5) Export environment variables for the current shell only; persistence must be handled manually.
 set -e
 
 # --- Install SWIG 4.1 and register it as the default 'swig' ---
@@ -74,23 +74,8 @@ s = String()
 print('OK:', type(s))
 PY
 
-# --- Step 5: persist environment variables in ~/.bashrc (idempotent) ---
-BASHRC="$HOME/.bashrc"
-
-add_line_once() {
-  local line="$1"
-  local file="$2"
-  grep -qxF "$line" "$file" || echo "$line" >> "$file"
-}
-
-# (a) Generated Python packages
-add_line_once 'export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH' "$BASHRC"
-
-# (b) Fast-DDS Python site-packages (if available)
-add_line_once 'export PYTHONPATH="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr '\'' '\'' :):$PYTHONPATH"' "$BASHRC"
-
-# (c) Shared libraries: centralized dir + (as fallback) all lib*.so-containing dirs
-add_line_once 'export LD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:$LD_LIBRARY_PATH' "$BASHRC"
-add_line_once 'export LD_LIBRARY_PATH="$(find /opt/fast-dds-v3-libs/python/src -type f -name '\''lib*.so'\'' -printf '\''%h\n'\'' | sort -u | paste -sd: -):$LD_LIBRARY_PATH"' "$BASHRC"
-
-echo "Done. Reload your shell rc to apply permanently →  source ~/.bashrc"
+cat <<'NOTE'
+[NOTE]
+- Environment variables are exported only for the current shell session.
+- Rerun this script in each shell that needs the generated ROS DataTypes or manually add the PYTHONPATH/LD_LIBRARY_PATH commands printed above.
+NOTE
