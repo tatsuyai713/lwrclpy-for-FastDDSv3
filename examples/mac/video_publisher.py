@@ -10,13 +10,28 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import Image
 
 
+def _set_header(msg: Image, stamp, frame_id: str) -> None:
+    hdr = msg.header()
+    st = hdr.stamp()
+    st.sec(getattr(stamp, "sec", 0) if callable(getattr(stamp, "sec", None)) else getattr(stamp, "sec", 0))
+    st.nanosec(
+        getattr(stamp, "nanosec", 0) if callable(getattr(stamp, "nanosec", None)) else getattr(stamp, "nanosec", 0)
+    )
+    hdr.frame_id(frame_id)
+
+
 def frame_to_image_msg(frame: np.ndarray, stamp, frame_id="video_frame") -> Image:
     msg = Image()
+    # attribute-style assignment (rclpy compatible); compat layer maps to SWIG setters
+    msg.header = msg.header() if callable(getattr(msg, "header", None)) else msg.header
     msg.header.stamp = stamp
     msg.header.frame_id = frame_id
-    msg.height, msg.width = frame.shape[:2]
+    h, w = frame.shape[:2]
+    msg.height = h
+    msg.width = w
     msg.encoding = "bgr8"
-    msg.step = frame.shape[1] * 3
+    msg.is_bigendian = 0
+    msg.step = w * 3
     msg.data = frame.tobytes()
     return msg
 

@@ -10,6 +10,7 @@ from lwrclpy.executors import SingleThreadedExecutor
 from lwrclpy.node import Node
 from sensor_msgs.msg import Image
 from ultralytics import YOLO
+from lwrclpy.qos import QoSProfile
 
 
 def default_device() -> str:
@@ -20,13 +21,27 @@ def default_device() -> str:
     return "cpu"
 
 
-def frame_to_image_msg(frame: np.ndarray, stamp):
+def _set_header(msg: Image, stamp, frame_id: str) -> None:
+    hdr = msg.header()
+    st = hdr.stamp()
+    st.sec(getattr(stamp, "sec", 0) if callable(getattr(stamp, "sec", None)) else getattr(stamp, "sec", 0))
+    st.nanosec(
+        getattr(stamp, "nanosec", 0) if callable(getattr(stamp, "nanosec", None)) else getattr(stamp, "nanosec", 0)
+    )
+    hdr.frame_id(frame_id)
+
+
+def frame_to_image_msg(frame: np.ndarray, stamp, frame_id: str = "camera_frame"):
     msg = Image()
+    msg.header = msg.header() if callable(getattr(msg, "header", None)) else msg.header
     msg.header.stamp = stamp
-    msg.header.frame_id = "camera_frame"
-    msg.height, msg.width = frame.shape[:2]
+    msg.header.frame_id = frame_id
+    h, w = frame.shape[:2]
+    msg.height = h
+    msg.width = w
     msg.encoding = "bgr8"
-    msg.step = frame.shape[1] * 3
+    msg.is_bigendian = 0
+    msg.step = w * 3
     msg.data = frame.tobytes()
     return msg
 
@@ -42,8 +57,9 @@ class VideoYoloNode(Node):
         self.device = device
         if self.device:
             self.model.to(self.device)
-        self.image_pub = self.create_publisher(Image, "video/image_raw", 10)
-        self.annotated_pub = self.create_publisher(Image, "video/image_annotated", 10)
+        sensor_qos = QoSProfile.sensor_data()
+        self.image_pub = self.create_publisher(Image, "video/image_raw", sensor_qos)
+        self.annotated_pub = self.create_publisher(Image, "video/image_annotated", sensor_qos)
         self.timer = self.create_timer(1.0 / publish_rate, self.publish_frame)
 
     def publish_frame(self):

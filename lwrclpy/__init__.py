@@ -1,3 +1,8 @@
+from ._bootstrap_fastdds import ensure_fastdds
+ensure_fastdds()
+from .compat import patch_known_message_modules
+patch_known_message_modules()
+
 from .context import init, shutdown, ok, get_participant
 from .executors import spin, spin_once, spin_some, SingleThreadedExecutor, MultiThreadedExecutor
 from .node import Node, Rate, create_node, create_rate

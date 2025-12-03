@@ -56,12 +56,15 @@ class Publisher:
 
     def publish(self, msg) -> None:
         """Publish a message instance generated from the SWIG type."""
-        to_send = msg
-        try:
-            target_ctor = self._msg_ctor if self._msg_ctor is not None and isinstance(msg, self._msg_ctor) else msg.__class__
-            to_send = clone_message(msg, target_ctor)
-        except Exception:
-            to_send = msg  # fall back to original on failure
+        # If the message is already the generated type, send as-is to avoid clone/copy churn
+        if self._msg_ctor is not None and isinstance(msg, self._msg_ctor):
+            to_send = msg
+        else:
+            try:
+                target_ctor = self._msg_ctor if self._msg_ctor is not None else msg.__class__
+                to_send = clone_message(msg, target_ctor)
+            except Exception:
+                to_send = msg  # fall back to original on failure
         self._writer.write(to_send)
 
     def wait_for_all_acked(self, timeout: Duration | float | int | None = None) -> bool:
