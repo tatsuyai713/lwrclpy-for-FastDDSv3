@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import Image
 
 
@@ -26,7 +27,13 @@ class VideoPublisher(Node):
         self.cap = cv2.VideoCapture(video_path)
         if not self.cap.isOpened():
             raise RuntimeError(f"Unable to open video file: {video_path}")
-        self.publisher = self.create_publisher(Image, topic, 10)
+        qos = QoSProfile(
+            depth=5,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+        )
+        self.publisher = self.create_publisher(Image, topic, qos)
+        self.get_logger().info(f"Publishing {video_path} to '{topic}' at {rate} Hz")
         self.timer = self.create_timer(1.0 / rate, self.publish_frame)
 
     def publish_frame(self):

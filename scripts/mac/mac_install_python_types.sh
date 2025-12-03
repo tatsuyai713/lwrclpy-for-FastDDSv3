@@ -236,41 +236,39 @@ if [[ -x "${INSTALL_NAME_TOOL}" ]]; then
   done < <(find "${INSTALL_ROOT}" -type f \( -name "*.so" -o -name "*.dylib" \))
 fi
 
-# Ensure common dependencies are colocated (Header/Time/Duration used across packages)
-ensure_common_deps(){
-  local dst="$1" src
-  mkdir -p "${dst}"
-  for lib in libHeader.dylib libTime.dylib libDuration.dylib; do
-    [[ -e "${dst}/${lib}" ]] && continue
-    for src in \
-      "${INSTALL_ROOT}/std_msgs/msg/${lib}" \
-      "${INSTALL_ROOT}/builtin_interfaces/msg/${lib}" \
-    ; do
-      if [[ -f "${src}" ]]; then
-        /bin/cp -p "${src}" "${dst}/"
-        break
-      fi
-    done
-  done
+# Generic dependency mirroring: for every msg dir, ensure all @loader_path/lib*.dylib deps are present
+LIB_INDEX="$(mktemp)"
+find "${INSTALL_ROOT}" -type f -name "lib*.dylib" -print | while IFS= read -r f; do
+  bn="$(basename "$f")"
+  echo "${bn}|${f}"
+done | sort -u > "${LIB_INDEX}"
+
+mirror_missing_deps(){
+  local dir="$1" dep_path dep_bn src
+  [[ -x "${OTOOL}" ]] || return 0
+  while IFS= read -r file; do
+    while IFS= read -r line; do
+      dep_path="$(echo "$line" | awk '{print $1}')"
+      case "${dep_path}" in
+        @loader_path/lib*.dylib)
+          dep_bn="$(basename "${dep_path}")"
+          if [[ ! -e "${dir}/${dep_bn}" ]]; then
+            src="$(awk -F'|' -v bn="${dep_bn}" '$1==bn{print $2; exit}' "${LIB_INDEX}")"
+            if [[ -n "${src}" && -f "${src}" ]]; then
+              /bin/cp -p "${src}" "${dir}/"
+            fi
+          fi
+          ;;
+      esac
+    done < <("${OTOOL}" -L "${file}" 2>/dev/null | tail -n +2)
+  done < <(find "${dir}" -maxdepth 1 -type f \( -name "lib*.dylib" -o -name "*Wrapper.so" -o -name "*Wrapper.dylib" \))
 }
+
 while IFS= read -r d; do
-  ensure_common_deps "${d}"
+  mirror_missing_deps "${d}"
 done < <(find "${INSTALL_ROOT}" -type d -path "*/msg")
 
-# Explicitly mirror std_msgs/builtin_interfaces core libs into sensor_msgs (broad dependency)
-if [[ -d "${INSTALL_ROOT}/sensor_msgs/msg" ]]; then
-  for lib in libHeader.dylib libTime.dylib libDuration.dylib; do
-    src=""
-    for candidate in \
-      "${INSTALL_ROOT}/std_msgs/msg/${lib}" \
-      "${INSTALL_ROOT}/builtin_interfaces/msg/${lib}"; do
-      if [[ -f "${candidate}" ]]; then src="${candidate}"; break; fi
-    done
-    if [[ -n "${src}" && ! -e "${INSTALL_ROOT}/sensor_msgs/msg/${lib}" ]]; then
-      /bin/cp -p "${src}" "${INSTALL_ROOT}/sensor_msgs/msg/${lib}"
-    fi
-  done
-fi
+rm -f "${LIB_INDEX}"
 
 cat <<'EOF'
 
