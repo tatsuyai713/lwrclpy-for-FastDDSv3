@@ -15,7 +15,8 @@ SCRIPTS_DIR="${REPO_ROOT}/scripts"
 PKG_NAME="lwrclpy"
 PKG_VERSION="${PKG_VERSION:-0.1.1}"
 
-PY_INSTALL_ROOT="${PY_INSTALL_ROOT:-/opt/fast-dds-v3-libs/python/src}"
+BUILD_ROOT="${BUILD_ROOT:-${REPO_ROOT}/._types_python_build_v3}"           # prebuilt DataTypes tree
+PY_INSTALL_ROOT="${PY_INSTALL_ROOT:-}"                                     # optional: already-installed DataTypes
 FASTDDS_PREFIX="${FASTDDS_PREFIX:-/opt/fast-dds-v3}"
 
 STAGING_ROOT="${REPO_ROOT}/._pip_pkg_lwrclpy_mac"
@@ -27,7 +28,6 @@ need rsync
 
 [[ -d "${REPO_ROOT}/lwrclpy" ]] || { echo "[FATAL] lwrclpy/ folder not found"; exit 1; }
 [[ -d "${REPO_ROOT}/rclpy" ]] || { echo "[FATAL] rclpy/ folder not found"; exit 1; }
-[[ -d "${PY_INSTALL_ROOT}" ]] || { echo "[FATAL] Generated Python packages not found: ${PY_INSTALL_ROOT}"; exit 1; }
 [[ -d "${FASTDDS_PREFIX}/lib" ]] || { echo "[FATAL] ${FASTDDS_PREFIX}/lib not found"; exit 1; }
 
 rm -rf "${STAGING_ROOT}"
@@ -53,8 +53,19 @@ fi
 [[ -f "${FASTDDS_PKG_SRC}/_fastdds_python.so" || -f "${FASTDDS_PKG_SRC}/_fastdds_python.dylib" ]] || {
   echo "[FATAL] fastdds Python extension not found under ${FASTDDS_PKG_SRC}"; exit 2; }
 
-echo "[INFO] Staging generated ROS packages from ${PY_INSTALL_ROOT}"
-rsync -a "${PY_INSTALL_ROOT}/" "${STAGING_ROOT}/"
+echo "[INFO] Staging generated ROS packages into ${STAGING_ROOT}"
+if [[ -n "${PY_INSTALL_ROOT}" ]]; then
+  [[ -d "${PY_INSTALL_ROOT}" ]] || { echo "[FATAL] PY_INSTALL_ROOT not found: ${PY_INSTALL_ROOT}"; exit 1; }
+  rsync -a "${PY_INSTALL_ROOT}/" "${STAGING_ROOT}/"
+else
+  [[ -d "${BUILD_ROOT}/src" ]] || {
+    echo "[FATAL] BUILD_ROOT/src not found: ${BUILD_ROOT}/src"
+    echo "        Provide PY_INSTALL_ROOT to use an existing install tree."
+    exit 1
+  }
+  INSTALL_ROOT="${STAGING_ROOT}" BUILD_ROOT="${BUILD_ROOT}" \
+    bash "${REPO_ROOT}/scripts/mac/mac_install_python_types.sh"
+fi
 
 echo "[INFO] Staging lwrclpy sources"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/lwrclpy/" "${STAGING_ROOT}/lwrclpy/"

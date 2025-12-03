@@ -4,12 +4,14 @@
 #   2) Generate & build Fast DDS Python message bindings (delegates to gen_python_types.sh).
 #   3) Install generated Python packages into /opt/fast-dds-v3-libs/python/src (delegates to install_python_types.sh).
 #   4) Collect all generated lib*.so / lib*.dylib into /opt/fast-dds-v3-libs/lib (idempotent).
-#   5) Export env vars for current shell (DYLD_LIBRARY_PATH / PYTHONPATH) and persist to ~/.zshrc.
+#   5) Export env vars for current shell (DYLD_LIBRARY_PATH / PYTHONPATH) and optionally persist to ~/.zshrc.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"
+PERSIST_ENV="${PERSIST_ENV:-0}"   # set to 1 to append exports to ~/.zshrc
+EXPORT_ENV="${EXPORT_ENV:-0}"     # set to 1 to export DYLD/PYTHONPATH for this shell (off by default to avoid SIP kills)
 
 # --- 0) sanity (macOS only) ---
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -42,7 +44,7 @@ fi
 
 # --- 2) generate & build all message bindings ---
 echo "[INFO] Running gen_python_types.sh …"
-bash "${SCRIPT_DIR}/mac_gen_python_types.sh"
+#bash "${SCRIPT_DIR}/mac_gen_python_types.sh"
 
 # --- 3) install generated packages into target prefix ---
 current_dir="${ROOT_DIR}"
@@ -114,47 +116,38 @@ find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.
       fi
     done
 
-# --- 4) export runtime paths for this shell session (macOS uses DYLD_LIBRARY_PATH) ---
-echo "[INFO] Exporting environment variables for current shell…"
-ADD_DYLD_DIRS=""
-_tmp_dirs="$(mktemp)"
-find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.dylib' \) -print0 \
-  | while IFS= read -r -d '' f; do
-      dirname "$f"
-    done | sort -u > "${_tmp_dirs}"
-if [[ -s "${_tmp_dirs}" ]]; then
-  ADD_DYLD_DIRS="$(tr '\n' ':' < "${_tmp_dirs}")"
-  ADD_DYLD_DIRS="${ADD_DYLD_DIRS%:}"
-fi
-rm -f "${_tmp_dirs}"
+if [[ "${EXPORT_ENV}" -eq 1 ]]; then
+  echo "[INFO] Exporting environment variables for current shell…"
+  ADD_DYLD_DIRS=""
+  _tmp_dirs="$(mktemp)"
+  find /opt/fast-dds-v3-libs/python/src -type f \( -name 'lib*.so' -o -name 'lib*.dylib' \) -print0 \
+    | while IFS= read -r -d '' f; do
+        dirname "$f"
+      done | sort -u > "${_tmp_dirs}"
+  if [[ -s "${_tmp_dirs}" ]]; then
+    ADD_DYLD_DIRS="$(tr '\n' ':' < "${_tmp_dirs}")"
+    ADD_DYLD_DIRS="${ADD_DYLD_DIRS%:}"
+  fi
+  rm -f "${_tmp_dirs}"
 
-DYLD_COMBINED="${ADD_DYLD_DIRS}"
-[[ -n "${DYLD_COMBINED}" ]] && DYLD_COMBINED="${DYLD_COMBINED}:"
-DYLD_COMBINED="${DYLD_COMBINED}${TARGET_LIB_DIR}"
-if [[ -n "${DYLD_LIBRARY_PATH:-}" ]]; then
-  DYLD_COMBINED="${DYLD_COMBINED}:${DYLD_LIBRARY_PATH}"
-fi
-export DYLD_LIBRARY_PATH="${DYLD_COMBINED}"
-export PYTHONPATH="/opt/fast-dds-v3-libs/python/src:${PYTHONPATH:-}"
+  DYLD_COMBINED="${ADD_DYLD_DIRS}"
+  [[ -n "${DYLD_COMBINED}" ]] && DYLD_COMBINED="${DYLD_COMBINED}:"
+  DYLD_COMBINED="${DYLD_COMBINED}${TARGET_LIB_DIR}"
+  if [[ -n "${DYLD_LIBRARY_PATH:-}" ]]; then
+    DYLD_COMBINED="${DYLD_COMBINED}:${DYLD_LIBRARY_PATH}"
+  fi
+  export DYLD_LIBRARY_PATH="${DYLD_COMBINED}"
+  export PYTHONPATH="/opt/fast-dds-v3-libs/python/src:${PYTHONPATH:-}"
 
-PY_SITE_PACK="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr ' ' ':')"
-if [[ -n "${PY_SITE_PACK}" ]]; then
-  export PYTHONPATH="${PY_SITE_PACK}:${PYTHONPATH}"
-fi
+  PY_SITE_PACK="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr ' ' ':')"
+  if [[ -n "${PY_SITE_PACK}" ]]; then
+    export PYTHONPATH="${PY_SITE_PACK}:${PYTHONPATH}"
+  fi
 
-# --- 4.5) sanity check import path resolution ---
-python3 - <<'PY'
-import sys, os
-print("[DBG] PYTHONPATH=", os.environ.get("PYTHONPATH",""))
-print("[DBG] DYLD_LIBRARY_PATH=", os.environ.get("DYLD_LIBRARY_PATH",""))
-try:
-    from std_msgs.msg import String
-    s = String()
-    print("OK:", type(s))
-except Exception as e:
-    print("IMPORT-ERROR:", e)
-    raise
-PY
+  echo "[INFO] Skipping inline Python sanity check to avoid SIP-related kills. Run your own check after reviewing env."
+else
+  echo "[INFO] EXPORT_ENV=0; not exporting DYLD/PYTHONPATH (recommended on macOS)."
+fi
 
 # --- 5) persist environment variables in ~/.zshrc (idempotent on macOS) ---
 ZSHRC="$HOME/.zshrc"
@@ -166,18 +159,25 @@ add_line_once() {
   grep -qxF "$line" "$file" || echo "$line" >> "$file"
 }
 
-echo "[INFO] Persisting environment to ${ZSHRC} …"
-add_line_once 'export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH' "$ZSHRC"
-add_line_once 'export PYTHONPATH="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr '\'' '\'' :):$PYTHONPATH"' "$ZSHRC"
-add_line_once 'export DYLD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:$DYLD_LIBRARY_PATH' "$ZSHRC"
-add_line_once 'export DYLD_LIBRARY_PATH="$(find /opt/fast-dds-v3-libs/python/src -type f \( -name '\''lib*.so'\'' -o -name '\''lib*.dylib'\'' \) -print0 | xargs -0 -I{} dirname {} | sort -u | paste -sd: -):$DYLD_LIBRARY_PATH"' "$ZSHRC"
+if [[ "${PERSIST_ENV}" -eq 1 ]]; then
+  echo "[INFO] Persisting environment to ${ZSHRC} …"
+  add_line_once 'export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH' "$ZSHRC"
+  add_line_once 'export PYTHONPATH="$(echo /opt/fast-dds-v3/lib/python*/site-packages /opt/fast-dds-v3/lib/python*/dist-packages 2>/dev/null | tr '\'' '\'' :):$PYTHONPATH"' "$ZSHRC"
+  add_line_once 'export DYLD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:$DYLD_LIBRARY_PATH' "$ZSHRC"
+  add_line_once 'export DYLD_LIBRARY_PATH="$(find /opt/fast-dds-v3-libs/python/src -type f \( -name '\''lib*.so'\'' -o -name '\''lib*.dylib'\'' \) -print0 | xargs -0 -I{} dirname {} | sort -u | paste -sd: -):$DYLD_LIBRARY_PATH"' "$ZSHRC"
+else
+  echo "[INFO] PERSIST_ENV=0; not writing to ${ZSHRC}"
+fi
 
 cat <<'NOTE'
 [NOTE]
 - DYLD_LIBRARY_PATH is ignored for GUI apps due to SIP (Terminal sessions honor it).
 - This script relies on Homebrew swig; switch via `brew unlink swig@X && brew link swig@Y` if needed.
-- Environment exports were appended to ~/.zshrc. To apply immediately:
+- Environment exports can be appended to ~/.zshrc when PERSIST_ENV=1. To apply immediately:
     source ~/.zshrc
+  Or export manually for the current shell (optional, may trigger SIP kills if DYLD is set):
+    export PYTHONPATH=/opt/fast-dds-v3-libs/python/src:$PYTHONPATH
+    export DYLD_LIBRARY_PATH=/opt/fast-dds-v3-libs/lib:$DYLD_LIBRARY_PATH
 NOTE
 
 echo "[DONE] All set."

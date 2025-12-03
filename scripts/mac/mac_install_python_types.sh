@@ -10,15 +10,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 : "${BUILD_ROOT:=}"                               # e.g., /path/to/repo/._types_python_build_v3
-: "${INSTALL_ROOT:=/opt/fast-dds-v3-libs/python/src}"  # Where Python pkgs will be installed
 
 log(){ echo "$@" >&2; }
 need(){ command -v "$1" >/dev/null 2>&1 || { log "[FATAL] '$1' not found"; exit 1; }; }
 need python3
 
+PY_PURELIB="$(python3 - <<'PY'
+import sysconfig
+print(sysconfig.get_paths()["platlib"])
+PY
+)"
+: "${INSTALL_ROOT:=${PY_PURELIB}}"  # Default to current Python's site-packages
+
 # Use BSD 'install' if present (macOS has /usr/bin/install)
 : "${INSTALL_BIN:=$(command -v install || true)}"
 [[ -n "${INSTALL_BIN}" ]] || { log "[FATAL] 'install' command not found"; exit 1; }
+: "${INSTALL_NAME_TOOL:=$(command -v install_name_tool || true)}"
+: "${OTOOL:=$(command -v otool || true)}"
 
 mkdir -p "${INSTALL_ROOT}"
 
@@ -34,7 +42,7 @@ fi
 if [[ -z "${BUILD_ROOT}" || ! -d "${BUILD_ROOT}/src" ]]; then
   log "[FATAL] BUILD_ROOT not found. Example:"
   log "  BUILD_ROOT=/path/to/repo/._types_python_build_v3 \\"
-  log "    INSTALL_ROOT=/opt/fast-dds-v3-libs/python/src \\"
+  log "    INSTALL_ROOT=\$(python3 - <<'PY' ; import sysconfig ; print(sysconfig.get_paths()[\"platlib\"]) ; PY) \\"
   log "    bash install_python_types.sh"
   exit 1
 fi
@@ -46,6 +54,78 @@ ensure_init(){
   local d="$1"
   [[ -d "$d" ]] || mkdir -p "$d"
   [[ -f "$d/__init__.py" ]] || echo '# auto-generated' > "$d/__init__.py"
+}
+
+set_rpaths(){
+  local target="$1"
+  [[ -x "${INSTALL_NAME_TOOL}" && -x "${OTOOL}" ]] || return 0
+  local current_rpaths new_rpaths=() rp
+  current_rpaths="$(otool -l "${target}" 2>/dev/null | awk '/LC_RPATH/{getline;getline;print $2}')"
+  # Always prefer local directory first
+  new_rpaths+=("@loader_path")
+  while IFS= read -r rp; do
+    [[ -z "${rp}" ]] && continue
+    # Drop build-tree rpaths
+    if [[ "${rp}" == *"${BUILD_ROOT}"* ]]; then
+      continue
+    fi
+    # Avoid duplicates and keep only a small set (fastdds/homebrew if present)
+    case "${rp}" in
+      @loader_path) continue ;;
+      /opt/fast-dds-v3/lib) new_rpaths+=("/opt/fast-dds-v3/lib") ;;
+      /opt/homebrew/lib) new_rpaths+=("/opt/homebrew/lib") ;;
+    esac
+  done <<< "${current_rpaths}"
+
+  # Clear existing and re-add ordered rpaths
+  while IFS= read -r rp; do
+    [[ -z "${rp}" ]] && continue
+    install_name_tool -delete_rpath "${rp}" "${target}" >/dev/null 2>&1 || true
+  done <<< "${current_rpaths}"
+  for rp in "${new_rpaths[@]}"; do
+    install_name_tool -add_rpath "${rp}" "${target}" >/dev/null 2>&1 || true
+  done
+}
+
+rewrite_dep_paths(){
+  local target="$1"
+  [[ -x "${INSTALL_NAME_TOOL}" && -x "${OTOOL}" ]] || return 0
+  # Replace @rpath/lib*.dylib (except fastdds/fastcdr) with @loader_path/lib*.dylib to keep deps local
+  while IFS= read -r line; do
+    dep="$(echo "$line" | awk '{print $1}')"
+    case "${dep}" in
+      @rpath/libfastdds.*|@rpath/libfastcdr.*) continue ;;
+      @rpath/lib*.dylib)
+        base="$(basename "${dep}")"
+        install_name_tool -change "${dep}" "@loader_path/${base}" "${target}" >/dev/null 2>&1 || true
+        ;;
+    esac
+  done < <("${OTOOL}" -L "${target}" 2>/dev/null | tail -n +2)
+}
+
+copy_local_deps(){
+  local target="$1" dst_dir dep
+  dst_dir="$(dirname "${target}")"
+  [[ -x "${OTOOL}" ]] || return 0
+  while IFS= read -r line; do
+    dep="$(echo "$line" | awk '{print $1}')"
+    case "${dep}" in
+      @loader_path/*) dep="${dst_dir}/${dep#@loader_path/}" ;;
+      ${INSTALL_ROOT}/*) ;;
+      *) continue ;;
+    esac
+    local bn="$(basename "${dep}")"
+    if [[ ! -e "${dst_dir}/${bn}" ]]; then
+      if [[ -f "${dep}" ]]; then
+        /bin/cp -p "${dep}" "${dst_dir}/"
+      else
+        dep="$(find "${INSTALL_ROOT}" -type f -name "${bn}" -print -quit 2>/dev/null || true)"
+        if [[ -n "${dep}" ]]; then
+          /bin/cp -p "${dep}" "${dst_dir}/"
+        fi
+      fi
+    fi
+  done < <("${OTOOL}" -L "${target}" 2>/dev/null | tail -n +2)
 }
 
 has_file(){ # has_file DIR GLOB
@@ -96,10 +176,16 @@ install_one(){
     wrapper_target="${wrapper_target%.dylib}.so"
   fi
   "${INSTALL_BIN}" -m 0755 "${so_wrapper}" "${dst_pkg}/${wrapper_target}"
+  set_rpaths "${dst_pkg}/${wrapper_target}"
   if [[ "${wrapper_target}" != "${wrapper_basename}" && -e "${dst_pkg}/${wrapper_basename}" ]]; then
     rm -f "${dst_pkg}/${wrapper_basename}"
   fi
-  [[ -n "${so_core}" ]] && "${INSTALL_BIN}" -m 0755 "${so_core}" "${dst_pkg}/$(basename "${so_core}")"
+  if [[ -n "${so_core}" ]]; then
+    "${INSTALL_BIN}" -m 0755 "${so_core}" "${dst_pkg}/$(basename "${so_core}")"
+    set_rpaths "${dst_pkg}/$(basename "${so_core}")"
+    rewrite_dep_paths "${dst_pkg}/$(basename "${so_core}")"
+    copy_local_deps "${dst_pkg}/$(basename "${so_core}")"
+  fi
 
   # Re-export the class at package level for ROS-like import:
   #   from .String import String as String
@@ -140,6 +226,51 @@ while IFS= read -r d; do
   install_one "${d}"
 done < "${TYPE_DIRS_SORTED}"
 rm -f "${TYPE_DIRS_SORTED}"
+
+# Final pass: ensure all installed .so/.dylib resolve to their own directory first
+if [[ -x "${INSTALL_NAME_TOOL}" ]]; then
+  while IFS= read -r bin; do
+      set_rpaths "${bin}"
+      rewrite_dep_paths "${bin}"
+      copy_local_deps "${bin}"
+  done < <(find "${INSTALL_ROOT}" -type f \( -name "*.so" -o -name "*.dylib" \))
+fi
+
+# Ensure common dependencies are colocated (Header/Time/Duration used across packages)
+ensure_common_deps(){
+  local dst="$1" src
+  mkdir -p "${dst}"
+  for lib in libHeader.dylib libTime.dylib libDuration.dylib; do
+    [[ -e "${dst}/${lib}" ]] && continue
+    for src in \
+      "${INSTALL_ROOT}/std_msgs/msg/${lib}" \
+      "${INSTALL_ROOT}/builtin_interfaces/msg/${lib}" \
+    ; do
+      if [[ -f "${src}" ]]; then
+        /bin/cp -p "${src}" "${dst}/"
+        break
+      fi
+    done
+  done
+}
+while IFS= read -r d; do
+  ensure_common_deps "${d}"
+done < <(find "${INSTALL_ROOT}" -type d -path "*/msg")
+
+# Explicitly mirror std_msgs/builtin_interfaces core libs into sensor_msgs (broad dependency)
+if [[ -d "${INSTALL_ROOT}/sensor_msgs/msg" ]]; then
+  for lib in libHeader.dylib libTime.dylib libDuration.dylib; do
+    src=""
+    for candidate in \
+      "${INSTALL_ROOT}/std_msgs/msg/${lib}" \
+      "${INSTALL_ROOT}/builtin_interfaces/msg/${lib}"; do
+      if [[ -f "${candidate}" ]]; then src="${candidate}"; break; fi
+    done
+    if [[ -n "${src}" && ! -e "${INSTALL_ROOT}/sensor_msgs/msg/${lib}" ]]; then
+      /bin/cp -p "${src}" "${INSTALL_ROOT}/sensor_msgs/msg/${lib}"
+    fi
+  done
+fi
 
 cat <<'EOF'
 
