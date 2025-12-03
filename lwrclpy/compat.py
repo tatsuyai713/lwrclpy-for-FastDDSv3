@@ -1,11 +1,10 @@
-import inspect
 from types import ModuleType
+import inspect
 
 
 def _patch_message_class(cls):
     if getattr(cls, "__lwrclpy_attr_patched__", False):
         return
-    # Avoid patching PubSubType or non-SWIG classes
     if cls.__name__.endswith("PubSubType"):
         return
     try:
@@ -13,25 +12,7 @@ def _patch_message_class(cls):
     except Exception:
         return
 
-    def make_property(method_name, method_obj):
-        def getter(self):
-            try:
-                return method_obj(self)
-            except Exception:
-                return None
-
-        def setter(self, value):
-            try:
-                method_obj(self, value)
-            except Exception:
-                try:
-                    object.__setattr__(self, method_name, value)
-                except Exception:
-                    pass
-
-        return property(getter, setter)
-
-    patched_any = False
+    simple_fields = []
     for name in dir(inst):
         if name.startswith("_"):
             continue
@@ -41,15 +22,12 @@ def _patch_message_class(cls):
             continue
         if not callable(attr):
             continue
-        # Heuristic: only patch simple getters/setters (no required params)
         try:
             sig = inspect.signature(attr)
-            params = sig.parameters
-            # Allow bound methods with no required args
-            if any(p.default is inspect._empty and p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in list(params.values())[1:]):
+            params = list(sig.parameters.values())
+            if any(p.default is inspect._empty and p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in params[1:]):
                 continue
         except Exception:
-            # If signature is not introspectable, try calling without args
             pass
         try:
             attr()
@@ -57,13 +35,41 @@ def _patch_message_class(cls):
             continue
         except Exception:
             continue
+        simple_fields.append(name)
 
-        # Replace method with property that delegates to the original method.
-        setattr(cls, name, make_property(name, getattr(cls, name)))
-        patched_any = True
+    if not simple_fields:
+        return
 
-    if patched_any:
-        setattr(cls, "__lwrclpy_attr_patched__", True)
+    def __getattr__(self, name):
+        if name in simple_fields:
+            try:
+                attr = object.__getattribute__(self, name)
+                if callable(attr):
+                    return attr()
+            except Exception:
+                pass
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        if name in simple_fields:
+            try:
+                attr = object.__getattribute__(self, name)
+                if callable(attr):
+                    try:
+                        attr(value)
+                        return
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        object.__setattr__(self, name, value)
+
+    # Preserve existing __getattr__/__setattr__ if present by chaining
+    if not hasattr(cls, "__getattr__"):
+        cls.__getattr__ = __getattr__
+    if not hasattr(cls, "__setattr__"):
+        cls.__setattr__ = __setattr__
+    setattr(cls, "__lwrclpy_attr_patched__", True)
 
 
 def _patch_module(mod: ModuleType):
@@ -84,3 +90,12 @@ def patch_known_message_modules():
             continue
         _patch_module(module)
 
+
+def patch_loaded_msg_modules():
+    import sys
+
+    for name, module in list(sys.modules.items()):
+        if not module:
+            continue
+        if name.endswith(".msg") or ".msg." in name:
+            _patch_module(module)

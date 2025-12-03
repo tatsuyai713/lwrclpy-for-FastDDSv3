@@ -1,7 +1,16 @@
+import os
 from ._bootstrap_fastdds import ensure_fastdds
 ensure_fastdds()
-from .compat import patch_known_message_modules
-patch_known_message_modules()
+
+# Optional: patch SWIG-generated msg classes for attribute-style access.
+# Disabled by default for stability; set LWRCLPY_PATCH_MSG_ATTRS=1 to enable.
+if os.environ.get("LWRCLPY_PATCH_MSG_ATTRS") == "1":
+    try:
+        from .compat import patch_known_message_modules, patch_loaded_msg_modules
+        patch_known_message_modules()
+        patch_loaded_msg_modules()
+    except Exception:
+        pass
 
 from .context import init, shutdown, ok, get_participant
 from .executors import spin, spin_once, spin_some, SingleThreadedExecutor, MultiThreadedExecutor

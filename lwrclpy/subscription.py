@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 import fastdds  # type: ignore
+import os
 from .qos import QoSProfile
 from .message_utils import clone_message
 
@@ -24,6 +25,8 @@ def _retcode_is_ok(rc) -> bool:
 
 def _force_data_sharing_on_reader(rq: "fastdds.DataReaderQos") -> None:
     """Prefer/force data sharing on the reader QoS when the API exists."""
+    if os.environ.get("LWRCLPY_NO_DATASHARING") == "1":
+        return
     try:
         if hasattr(rq, "data_sharing"):
             ds = rq.data_sharing()

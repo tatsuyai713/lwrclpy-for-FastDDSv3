@@ -75,8 +75,16 @@ def clone_message(msg, msg_ctor):
     def _copy_val(val):
         if isinstance(val, (str, int, float, bool, type(None))):
             return val
-        if isinstance(val, (bytes, bytearray)):
+        if isinstance(val, (bytes, bytearray, memoryview)):
+            try:
+                return bytes(val)
+            except Exception:
+                pass
+        # Buffer protocol fallback
+        try:
             return bytes(val)
+        except Exception:
+            pass
         if isinstance(val, list):
             return [_copy_val(v) for v in val]
         if isinstance(val, tuple):
@@ -142,6 +150,13 @@ def clone_message(msg, msg_ctor):
                 return True
         except Exception:
             pass
+        # Fallback: explicit special-case for common fields present in __dict__ only
+        if name == "data" and isinstance(val, (bytes, bytearray, memoryview)):
+            try:
+                target.data(val)
+                return True
+            except Exception:
+                pass
         try:
             setattr(target, name, val)
             return True

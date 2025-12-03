@@ -37,18 +37,22 @@ def frame_to_image_msg(frame: np.ndarray, stamp, frame_id="video_frame") -> Imag
 
 
 class VideoPublisher(Node):
-    def __init__(self, video_path: str, topic: str, rate: float):
+    def __init__(self, video_path: str, topic: str, rate: float, scale: float):
         super().__init__("mac_video_publisher")
         self.cap = cv2.VideoCapture(video_path)
         if not self.cap.isOpened():
             raise RuntimeError(f"Unable to open video file: {video_path}")
+        self.scale = float(scale)
+        if self.scale <= 0:
+            self.scale = 1.0
         qos = QoSProfile(
             depth=5,
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             history=QoSHistoryPolicy.KEEP_LAST,
         )
         self.publisher = self.create_publisher(Image, topic, qos)
-        self.get_logger().info(f"Publishing {video_path} to '{topic}' at {rate} Hz")
+        scale_txt = f" scale={self.scale}x" if self.scale != 1.0 else ""
+        self.get_logger().info(f"Publishing {video_path} to '{topic}' at {rate} Hz{scale_txt}")
         self.timer = self.create_timer(1.0 / rate, self.publish_frame)
 
     def publish_frame(self):
@@ -57,9 +61,14 @@ class VideoPublisher(Node):
             self.get_logger().info("Video reached end. Rewinding.")
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             return
+        if self.scale != 1.0:
+            frame = cv2.resize(frame, None, fx=self.scale, fy=self.scale, interpolation=cv2.INTER_AREA)
         stamp = self.get_clock().now().to_msg()
         msg = frame_to_image_msg(frame, stamp)
         self.publisher.publish(msg)
+        # Log sparingly
+        if self.cap.get(cv2.CAP_PROP_POS_FRAMES) <= 5 or int(self.cap.get(cv2.CAP_PROP_POS_FRAMES)) % 30 == 0:
+            self.get_logger().info(f"Published frame {int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))}")
 
 
 def main():
@@ -67,11 +76,12 @@ def main():
     parser.add_argument("--video", "-v", required=True, help="Path to the video file (MP4/MOV)")
     parser.add_argument("--topic", "-t", default="video/image_raw", help="Topic name to publish frames")
     parser.add_argument("--rate", "-r", type=float, default=24.0, help="Publish rate in Hz (default: 24)")
+    parser.add_argument("--scale", "-s", type=float, default=0.1, help="Scale factor to downsample frames (default: 0.1)")
     args = parser.parse_args()
 
     rclpy.init()
     try:
-        node = VideoPublisher(args.video, args.topic, args.rate)
+        node = VideoPublisher(args.video, args.topic, args.rate, args.scale)
         rclpy.spin(node)
     finally:
         node.destroy_node()
