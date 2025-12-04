@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--video", "-v", required=True, help="Path to the video file (MP4/MOV)")
     parser.add_argument("--topic", "-t", default="video/image_raw", help="Topic name to publish frames")
     parser.add_argument("--rate", "-r", type=float, default=24.0, help="Publish rate in Hz (default: 24)")
-    parser.add_argument("--scale", "-s", type=float, default=0.1, help="Scale factor to downsample frames (default: 0.1)")
+    parser.add_argument("--scale", "-s", type=float, default=0.5, help="Scale factor to downsample frames (default: 0.1)")
     args = parser.parse_args()
 
     rclpy.init()

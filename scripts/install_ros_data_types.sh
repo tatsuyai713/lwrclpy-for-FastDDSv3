@@ -19,7 +19,7 @@ which swig
 swig -version
 
 # --- Step 1: generate & build all message bindings ---
-#bash gen_python_types.sh
+bash gen_python_types.sh
 
 # --- Step 2: install generated packages into the target prefix ---
 current_dir=$(pwd)
