@@ -99,3 +99,30 @@ def patch_loaded_msg_modules():
             continue
         if name.endswith(".msg") or ".msg." in name:
             _patch_module(module)
+
+
+def ensure_pointfield_constants():
+    """
+    Backfill PointField constants expected by sensor_msgs_py (INT8/UINT8/INT16/...).
+    Generated Fast DDS bindings may miss these enums; add them if absent.
+    """
+    try:
+        from sensor_msgs.msg import PointField
+    except Exception:
+        return
+    constants = {
+        "INT8": 1,
+        "UINT8": 2,
+        "INT16": 3,
+        "UINT16": 4,
+        "INT32": 5,
+        "UINT32": 6,
+        "FLOAT32": 7,
+        "FLOAT64": 8,
+    }
+    for name, value in constants.items():
+        if not hasattr(PointField, name):
+            try:
+                setattr(PointField, name, value)
+            except Exception:
+                pass

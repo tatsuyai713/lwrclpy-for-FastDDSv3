@@ -12,6 +12,13 @@ if os.environ.get("LWRCLPY_PATCH_MSG_ATTRS") == "1":
     except Exception:
         pass
 
+# Backfill PointField constants required by sensor_msgs_py (always safe to run)
+try:
+    from .compat import ensure_pointfield_constants
+    ensure_pointfield_constants()
+except Exception:
+    pass
+
 from .context import init, shutdown, ok, get_participant
 from .executors import spin, spin_once, spin_some, SingleThreadedExecutor, MultiThreadedExecutor
 from .node import Node, Rate, create_node, create_rate
