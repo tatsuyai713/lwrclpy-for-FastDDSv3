@@ -28,8 +28,7 @@ class Executor:
     def spin(self):
         while ok() and not self._stopped:
             self.spin_once(0.01)
-        if not ok() and not self._stopped:
-            raise ExternalShutdownException()
+        # Gracefully exit when shutdown() was called; do not raise.
 
     def spin_once(self, timeout_sec: float | None = None):
         try:
