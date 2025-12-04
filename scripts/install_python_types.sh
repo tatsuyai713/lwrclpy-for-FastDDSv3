@@ -90,6 +90,40 @@ for d in "${TYPE_DIRS[@]}"; do
   install_one "${d}"
 done
 
+# ===== Ensure dependent lib*.so are colocated with wrappers =====
+# Build index: basename -> full path
+LIB_INDEX="$(mktemp)"
+find "${INSTALL_ROOT}" -type f -name "lib*.so*" -print | while IFS= read -r f; do
+  bn="$(basename "$f")"
+  echo "${bn}|${f}"
+done | sort -u > "${LIB_INDEX}"
+
+mirror_missing_deps() {
+  local dir="$1" so dep bn src
+  while IFS= read -r so; do
+    while IFS= read -r line; do
+      dep="$(echo "$line" | awk '{print $1}')"
+      case "${dep}" in
+        lib*.so*)
+          bn="${dep}"
+          # Already present?
+          [[ -e "${dir}/${bn}" ]] && continue
+          src="$(awk -F'|' -v b="${bn}" '$1==b{print $2; exit}' "${LIB_INDEX}")"
+          if [[ -n "${src}" && -f "${src}" ]]; then
+            /bin/cp -p "${src}" "${dir}/"
+          fi
+          ;;
+      esac
+    done < <(ldd "${so}" 2>/dev/null | awk '/=>/{print $1} /^lib/ {print $1}')
+  done < <(find "${dir}" -maxdepth 1 -type f -name "lib*.so*" -o -name "*Wrapper.so" | sort)
+}
+
+while IFS= read -r d; do
+  mirror_missing_deps "${d}"
+done < <(find "${INSTALL_ROOT}" -type d -path "*/msg")
+
+rm -f "${LIB_INDEX}"
+
 cat <<EOF
 
 [OK] Installation finished.
