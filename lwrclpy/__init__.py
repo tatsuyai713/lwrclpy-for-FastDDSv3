@@ -14,8 +14,10 @@ if os.environ.get("LWRCLPY_PATCH_MSG_ATTRS") == "1":
 
 # Backfill PointField constants required by sensor_msgs_py (always safe to run)
 try:
-    from .compat import ensure_pointfield_constants
+    from .compat import ensure_pointfield_constants, ensure_common_interface_constants, patch_kwargs_for_common_interfaces
     ensure_pointfield_constants()
+    ensure_common_interface_constants()
+    patch_kwargs_for_common_interfaces()
 except Exception:
     pass
 
