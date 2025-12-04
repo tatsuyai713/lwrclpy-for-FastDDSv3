@@ -81,6 +81,17 @@ rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/lwrclpy/" "${ST
 echo "[INFO] Staging 'rclpy' compatibility shim…"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/rclpy/" "${STAGING_ROOT}/rclpy/"
 
+SENSORMSGS_PY_DIR="${REPO_ROOT}/third_party/common_interfaces/sensor_msgs_py/sensor_msgs_py"
+if [[ -d "${SENSORMSGS_PY_DIR}" ]]; then
+  echo "[INFO] Staging 'sensor_msgs_py' utilities…"
+  rsync -a --exclude='__pycache__' --exclude='*.pyc' "${SENSORMSGS_PY_DIR}/" "${STAGING_ROOT}/sensor_msgs_py/"
+else
+  echo "[FATAL] sensor_msgs_py not found at ${SENSORMSGS_PY_DIR}"
+  echo "       Run: git submodule update --init --recursive"
+  echo "       Or set SKIP_SENSORMSGS_PY=1 to build without pointcloud utilities."
+  [[ "${SKIP_SENSORMSGS_PY:-0}" == "1" ]] || exit 2
+fi
+
 # ========= 3) Vendor native libs (fixed paths) =========
 echo "[INFO] Vendoring native libs → lwrclpy/_vendor/lib"
 VEN_LIB_DIR="${STAGING_ROOT}/lwrclpy/_vendor/lib"
