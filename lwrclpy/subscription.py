@@ -62,9 +62,18 @@ class _ReaderListener(fastdds.DataReaderListener):
             return  # Avoid director double-fault
 
         if getattr(info, "valid_data", True) and _retcode_is_ok(rc):
-            # Enqueue the callback to be run by the executor
-            cloned = clone_message(data, self._msg_ctor)
-            self._enqueue_cb(self._user_cb, cloned)
+            # Enqueue the callback to be run by the executor.
+            # Prefer delivering the received instance directly to avoid extra copies.
+            try:
+                from .message_utils import expose_callable_fields
+                expose_callable_fields(data)
+            except Exception:
+                pass
+            if isinstance(data, self._msg_ctor):
+                self._enqueue_cb(self._user_cb, data)
+            else:
+                cloned = clone_message(data, self._msg_ctor)
+                self._enqueue_cb(self._user_cb, cloned)
 
 
 class Subscription:

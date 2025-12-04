@@ -63,6 +63,37 @@ class _ValueProxy:
             return NotImplemented
 
 
+def expose_callable_fields(msg):
+    """
+    For a SWIG-generated message instance, expose callable zero-arg fields as
+    attributes containing their current value (wrapped in _ValueProxy). This
+    improves repr/debugging without cloning the whole message.
+    """
+    for name in dir(msg):
+        if name.startswith("_"):
+            continue
+        try:
+            attr = getattr(msg, name)
+        except Exception:
+            continue
+        if not callable(attr):
+            continue
+        try:
+            val = attr()
+        except TypeError:
+            continue
+        except Exception:
+            continue
+        try:
+            setattr(msg, name, _ValueProxy(val))
+        except Exception:
+            try:
+                object.__setattr__(msg, name, _ValueProxy(val))
+            except Exception:
+                pass
+    return msg
+
+
 def clone_message(msg, msg_ctor):
     """
     Copy the received/sent message into a fresh instance using
