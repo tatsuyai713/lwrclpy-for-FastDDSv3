@@ -23,6 +23,7 @@ from .executors import (
 )
 from .duration import Duration
 from . import logging
+from . import qos
 
 
 class _InitContext:
@@ -77,4 +78,5 @@ __all__ = [
     "SetParametersResult",
     "Duration",
     "logging",
+    "qos",
 ]
