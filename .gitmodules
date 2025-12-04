@@ -5,3 +5,6 @@
 	path = third_party/ros2_examples
 	url = https://github.com/ros2/examples.git
 	branch = jazzy
+[submodule "third_party/common_interfaces"]
+	path = third_party/common_interfaces
+	url = https://github.com/ros2/common_interfaces
