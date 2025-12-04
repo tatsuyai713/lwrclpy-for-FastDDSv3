@@ -110,6 +110,44 @@ def ensure_pointfield_constants():
         from sensor_msgs.msg import PointField
     except Exception:
         return
+    # Backfill constructor to accept keyword args (name/offset/datatype/count)
+    if not getattr(PointField, "__lwrclpy_init_patched__", False):
+        _orig_init = PointField.__init__
+
+        from .message_utils import _ValueProxy  # local import to avoid cycles
+
+        def _patched_init(self, **kwargs):
+            try:
+                _orig_init(self)
+            except Exception:
+                pass
+            for k, v in kwargs.items():
+                try:
+                    setter = getattr(self, k, None)
+                    if callable(setter):
+                        try:
+                            setter(v)
+                            try:
+                                object.__setattr__(self, k, _ValueProxy(v))
+                            except Exception:
+                                pass
+                            continue
+                        except Exception:
+                            pass
+                    setattr(self, k, v)
+                    try:
+                        object.__setattr__(self, k, _ValueProxy(v))
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+        try:
+            PointField.__init__ = _patched_init
+            PointField.__lwrclpy_init_patched__ = True
+        except Exception:
+            pass
+
     constants = {
         "INT8": 1,
         "UINT8": 2,
