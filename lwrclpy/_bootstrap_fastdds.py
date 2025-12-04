@@ -36,6 +36,30 @@ def _preload_libs(paths):
             pass
 
 def ensure_fastdds():
+    # 1) Prefer vendored copy (bundled with lwrclpy)
+    try:
+        pkg_dir = os.path.dirname(__file__)
+        vendor_parent = os.path.join(pkg_dir, "_vendor")
+        vendor_lib = os.path.join(vendor_parent, "lib")
+        vendor_fastdds = os.path.join(vendor_parent, "fastdds")
+        if os.path.isdir(vendor_lib):
+            # Ensure dynamic loader can find vendored libs even without RPATH
+            ld = os.environ.get("LD_LIBRARY_PATH", "")
+            parts = ld.split(":") if ld else []
+            if vendor_lib not in parts:
+                os.environ["LD_LIBRARY_PATH"] = vendor_lib + (":" + ld if ld else "")
+            # Preload vendor libs first
+            _preload_libs(glob.glob(os.path.join(vendor_lib, "libfast*.so*")))
+            try:
+                # On Windows/Python>=3.8 this is required; harmless elsewhere
+                os.add_dll_directory(vendor_lib)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        if os.path.isdir(vendor_fastdds):
+            _prepend_sys_path(vendor_parent)
+    except Exception:
+        pass
+
     try:
         import fastdds  # noqa: F401
         return

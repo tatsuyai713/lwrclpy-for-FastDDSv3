@@ -96,8 +96,27 @@ fi
 echo "[INFO] Vendoring native libs → lwrclpy/_vendor/lib"
 VEN_LIB_DIR="${STAGING_ROOT}/lwrclpy/_vendor/lib"
 mkdir -p "${VEN_LIB_DIR}"
-install -m 0644 "${PREFIX_V3}/lib/libfastcdr.so"  "${VEN_LIB_DIR}/"
-install -m 0644 "${PREFIX_V3}/lib/libfastdds.so"  "${VEN_LIB_DIR}/"
+# Copy unversioned and versioned variants to satisfy dynamic loaders (no symlinks)
+copy_lib_variants(){
+  local stem="$1"  # e.g., libfastdds.so
+  local src_dir="${PREFIX_V3}/lib"
+  shopt -s nullglob
+  local copied=0
+  for f in "${src_dir}/${stem}" "${src_dir}/${stem}."*; do
+    [[ -f "$f" ]] || continue
+    local bn="$(basename "$f")"
+    echo "[INFO]   staging ${bn}"
+    cp -pL "$f" "${VEN_LIB_DIR}/${bn}"
+    copied=1
+  done
+  shopt -u nullglob
+  if [[ $copied -eq 0 ]]; then
+    echo "[FATAL] ${stem}* not found under ${src_dir}" >&2
+    exit 2
+  fi
+}
+copy_lib_variants "libfastcdr.so"
+copy_lib_variants "libfastdds.so"
 
 # ========= 4) Vendor the ENTIRE fastdds package (no search) =========
 echo "[INFO] Vendoring fastdds package directory:"
@@ -106,6 +125,39 @@ VEN_FASTDDS_PARENT="${STAGING_ROOT}/lwrclpy/_vendor"
 VEN_FASTDDS_DIR="${VEN_FASTDDS_PARENT}/fastdds"
 mkdir -p "${VEN_FASTDDS_PARENT}"
 rsync -a "${FASTDDS_PKG_SRC}/" "${VEN_FASTDDS_DIR}/"
+
+# Expose fastdds at top-level for imports that happen before lwrclpy bootstrap.
+# Prefer a symlink; fall back to a real copy.
+if [[ ! -e "${STAGING_ROOT}/fastdds" ]]; then
+  ln -s "lwrclpy/_vendor/fastdds" "${STAGING_ROOT}/fastdds" 2>/dev/null || rsync -a "${VEN_FASTDDS_DIR}/" "${STAGING_ROOT}/fastdds/"
+fi
+
+# After vendoring, copy libs into generated types (msg/srv/action)
+# (no per-type copies; RPATH points to _vendor/lib)
+
+# Install a .pth bootstrap to preload vendor libs even if RPATH is missing
+PTH_FILE="${STAGING_ROOT}/lwrclpy_vendor_loader.pth"
+cat > "${PTH_FILE}" <<'PTH'
+# Ensure vendored fastdds is available before any generated wrappers import it.
+import importlib
+try:
+    import lwrclpy._bootstrap_fastdds as _b
+    _b.ensure_fastdds()
+except Exception:
+    pass
+PTH
+
+# sitecustomize: executed automatically on interpreter startup
+cat > "${STAGING_ROOT}/sitecustomize.py" <<'PY'
+try:
+    import lwrclpy._bootstrap_fastdds as _b
+    _b.ensure_fastdds()
+except Exception:
+    pass
+PY
+
+echo "[INFO] Vendor lib contents:"
+ls -l "${VEN_LIB_DIR}" || true
 
 # ========= 5) Bootstrap: import vendored fastdds package deterministically =========
 echo "[INFO] Injecting bootstrap…"
@@ -184,8 +236,12 @@ fi
 
 # ========= 6) Set RPATH with patchelf (minimal) =========
 echo "[INFO] Setting RPATH via patchelf…"
+PATCHED_RPATH='$ORIGIN:$ORIGIN/../../lwrclpy/_vendor/lib'
 while IFS= read -r so; do
-  patchelf --set-rpath '$ORIGIN:$ORIGIN/../lib' "$so" || true
+  case "${so}" in
+    */lwrclpy/_vendor/lib/*) continue ;;
+  esac
+  patchelf --force-rpath --set-rpath "${PATCHED_RPATH}" "$so" || true
 done < <(find "${STAGING_ROOT}" -type f -name '*.so' | sort)
 
 # ========= 7) Make wheel metadata (platform-specific via bdist_wheel) =========
@@ -214,9 +270,12 @@ python_requires = >=3.8
 include_package_data = True
 zip_safe = False
 
+[options.data_files]
+. = lwrclpy_vendor_loader.pth, sitecustomize.py
+
 [options.package_data]
-# Include ALL .so files, not only lib*.so
-* = **/*.py, **/*Wrapper.*, **/*.so
+# Include ALL .so files (including versioned), not only lib*.so
+* = **/*.py, **/*Wrapper.*, **/*.so, **/*.so.*
 PYSETUPCFG
 
 # setup.py: force has_ext_modules() to True so wheel is NOT treated as pure-python

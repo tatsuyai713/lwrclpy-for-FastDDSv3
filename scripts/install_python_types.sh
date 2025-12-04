@@ -11,11 +11,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 : "${BUILD_ROOT:=}"   # e.g., /path/to/repo/._types_python_build_v3
 : "${INSTALL_ROOT:=/opt/fast-dds-v3-libs/python/src}"  # Root where Python packages will be installed
+VENDOR_LIB="${INSTALL_ROOT}/_vendor/lib"
 
 log(){ echo "$@" >&2; }
 need(){ command -v "$1" >/dev/null 2>&1 || { log "[FATAL] '$1' not found"; exit 1; }; }
 need python3
 mkdir -p "${INSTALL_ROOT}"
+
+# ========= Stage Fast DDS runtime libs (best-effort) =========
+stage_runtime_libs(){
+  local dst="${VENDOR_LIB}"
+  mkdir -p "${dst}"
+  # Always copy directly from fixed Fast DDS install (no search ambiguity)
+  for f in /opt/fast-dds-v3/lib/libfastdds.so* /opt/fast-dds-v3/lib/libfastcdr.so* /opt/fast-dds-v3/lib/libfastrtps.so*; do
+    [[ -f "$f" ]] || continue
+    bn="$(basename "$f")"
+    log "[STAGE] runtime lib ${bn} from /opt/fast-dds-v3/lib"
+    /bin/cp -pL "$f" "${dst}/${bn}"
+  done
+}
+stage_runtime_libs
 
 # ========= BUILD_ROOT auto-detection =========
 if [[ -z "${BUILD_ROOT}" ]]; then
@@ -90,6 +105,39 @@ for d in "${TYPE_DIRS[@]}"; do
   install_one "${d}"
 done
 
+# ========= Add shims for services missing top-level class (Request/Response pairing) =========
+add_all_service_shims(){
+  # Find all srv dirs and add shims for pairs *_Request.py / *_Response.py if top-level is missing.
+  while IFS= read -r srvdir; do
+    # build set of request/response stems
+    mapfile -t reqs < <(find "${srvdir}" -maxdepth 1 -type f -name "*_Request.py" -printf "%f\n" 2>/dev/null | sed 's/_Request\.py$//')
+    for stem in "${reqs[@]}"; do
+      local local_base req res init
+      local_base="${stem}"
+      req="${stem}_Request"
+      res="${stem}_Response"
+      # skip if either side missing
+      [[ -f "${srvdir}/${req}.py" && -f "${srvdir}/${res}.py" ]] || continue
+      # skip if already exists
+      [[ -f "${srvdir}/${local_base}.py" ]] && continue
+      log "[SHIM] ${srvdir}/${local_base}.py"
+      cat > "${srvdir}/${local_base}.py" <<PY
+from .${req} import ${req} as Request
+from .${res} import ${res} as Response
+
+class ${local_base}:
+    Request = Request
+    Response = Response
+PY
+      local init="${srvdir}/__init__.py"
+      grep -q "from .${local_base} import ${local_base} as ${local_base}" "${init}" 2>/dev/null || \
+        echo "from .${local_base} import ${local_base} as ${local_base}" >> "${init}"
+    done
+  done < <(find "${INSTALL_ROOT}" -type d -path "*/srv")
+}
+
+add_all_service_shims
+
 # ===== Ensure dependent lib*.so are colocated with wrappers =====
 # Build index: basename -> full path
 LIB_INDEX="$(mktemp)"
@@ -97,32 +145,33 @@ find "${INSTALL_ROOT}" -type f -name "lib*.so*" -print | while IFS= read -r f; d
   bn="$(basename "$f")"
   echo "${bn}|${f}"
 done | sort -u > "${LIB_INDEX}"
+if ! grep -q "libfastdds.so" "${LIB_INDEX}"; then
+  log "[WARN] libfastdds.so not found during staging; wrappers may still fail to load"
+fi
 
-mirror_missing_deps() {
-  local dir="$1" so dep bn src
+# ===== Patch RPATH to point at vendor libs (avoid per-msg copies) =====
+PATCHED_RPATH="\$ORIGIN:\$ORIGIN/../../lwrclpy/_vendor/lib"
+patch_rpath_dir() {
+  local dir="$1"
+  if ! command -v patchelf >/dev/null 2>&1; then
+    log "[WARN] patchelf not found; cannot patch RPATH in ${dir}"
+    return
+  fi
   while IFS= read -r so; do
-    while IFS= read -r line; do
-      dep="$(echo "$line" | awk '{print $1}')"
-      case "${dep}" in
-        lib*.so*)
-          bn="${dep}"
-          # Already present?
-          [[ -e "${dir}/${bn}" ]] && continue
-          src="$(awk -F'|' -v b="${bn}" '$1==b{print $2; exit}' "${LIB_INDEX}")"
-          if [[ -n "${src}" && -f "${src}" ]]; then
-            /bin/cp -p "${src}" "${dir}/"
-          fi
-          ;;
-      esac
-    done < <(ldd "${so}" 2>/dev/null | awk '/=>/{print $1} /^lib/ {print $1}')
-  done < <(find "${dir}" -maxdepth 1 -type f -name "lib*.so*" -o -name "*Wrapper.so" | sort)
+    # Skip core vendor libs
+    [[ "${so}" == *"/_vendor/lib/"* ]] && continue
+    case "$(basename "$so")" in
+      libfastdds.so*|libfastcdr.so*|libfastrtps.so*) continue ;;
+    esac
+    log "[RPATH] ${so}"
+    patchelf --force-rpath --set-rpath "${PATCHED_RPATH}" "${so}" 2>/dev/null || \
+      log "[WARN] patchelf failed for ${so}"
+  done < <(find "${dir}" -maxdepth 1 -type f \( -name "*.so" -o -name "*.so.*" \))
 }
 
 while IFS= read -r d; do
-  mirror_missing_deps "${d}"
-done < <(find "${INSTALL_ROOT}" -type d -path "*/msg")
-
-rm -f "${LIB_INDEX}"
+  patch_rpath_dir "${d}"
+done < <(find "${INSTALL_ROOT}" -type d \( -path "*/msg" -o -path "*/srv" -o -path "*/action" \))
 
 cat <<EOF
 
