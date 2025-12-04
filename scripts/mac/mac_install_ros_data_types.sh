@@ -44,7 +44,7 @@ fi
 
 # --- 2) generate & build all message bindings ---
 echo "[INFO] Running gen_python_types.sh …"
-#bash "${SCRIPT_DIR}/mac_gen_python_types.sh"
+bash "${SCRIPT_DIR}/mac_gen_python_types.sh"
 
 # --- 3) install generated packages into target prefix ---
 current_dir="${ROOT_DIR}"
