@@ -222,13 +222,13 @@ class ActionServer:
         qos = QoSProfile()
         self._send_goal_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_response", _register_type(self._send_goal_res_cls)),
+            self._create_topic(f"{self._send_goal_topic}Reply", _register_type(self._send_goal_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._send_goal_res_cls)[1],
         )
         self._get_result_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_response", _register_type(self._get_result_res_cls)),
+            self._create_topic(f"{self._get_result_topic}Reply", _register_type(self._get_result_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._get_result_res_cls)[1],
         )
@@ -257,7 +257,7 @@ class ActionServer:
                 self._goal_status_ctor = None
         self._cancel_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_response", _register_type(self._cancel_res_cls)),
+            self._create_topic(f"{self._cancel_topic}Reply", _register_type(self._cancel_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._cancel_res_cls)[1],
         )
@@ -268,7 +268,7 @@ class ActionServer:
 
         self._send_goal_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_request", _register_type(self._send_goal_req_cls)),
+            self._create_topic(f"{self._send_goal_topic}Request", _register_type(self._send_goal_req_cls)),
             qos,
             self._on_send_goal,
             send_goal_req_ctor,
@@ -276,7 +276,7 @@ class ActionServer:
         )
         self._get_result_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_request", _register_type(self._get_result_req_cls)),
+            self._create_topic(f"{self._get_result_topic}Request", _register_type(self._get_result_req_cls)),
             qos,
             self._on_get_result,
             get_result_req_ctor,
@@ -284,7 +284,7 @@ class ActionServer:
         )
         self._cancel_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_request", _register_type(self._cancel_req_cls)),
+            self._create_topic(f"{self._cancel_topic}Request", _register_type(self._cancel_req_cls)),
             qos,
             self._on_cancel,
             cancel_req_ctor,
@@ -562,19 +562,19 @@ class ActionClient:
         qos = QoSProfile()
         self._send_goal_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_request", _register_type(self._send_goal_req_cls)),
+            self._create_topic(f"{self._send_goal_topic}Request", _register_type(self._send_goal_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._send_goal_req_cls)[1],
         )
         self._get_result_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_request", _register_type(self._get_result_req_cls)),
+            self._create_topic(f"{self._get_result_topic}Request", _register_type(self._get_result_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._get_result_req_cls)[1],
         )
         self._cancel_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_request", _register_type(self._cancel_req_cls)),
+            self._create_topic(f"{self._cancel_topic}Request", _register_type(self._cancel_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._cancel_req_cls)[1],
         )
@@ -586,7 +586,7 @@ class ActionClient:
 
         self._send_goal_res_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_response", _register_type(self._send_goal_res_cls)),
+            self._create_topic(f"{self._send_goal_topic}Reply", _register_type(self._send_goal_res_cls)),
             qos,
             self._on_send_goal_response,
             send_goal_res_ctor,
@@ -594,7 +594,7 @@ class ActionClient:
         )
         self._result_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_response", _register_type(self._get_result_res_cls)),
+            self._create_topic(f"{self._get_result_topic}Reply", _register_type(self._get_result_res_cls)),
             qos,
             self._on_result_response,
             get_result_res_ctor,
@@ -610,7 +610,7 @@ class ActionClient:
         )
         self._cancel_res_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_response", _register_type(self._cancel_res_cls)),
+            self._create_topic(f"{self._cancel_topic}Reply", _register_type(self._cancel_res_cls)),
             qos,
             self._on_cancel_response,
             cancel_res_ctor,
