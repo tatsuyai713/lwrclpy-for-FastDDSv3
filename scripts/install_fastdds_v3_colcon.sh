@@ -36,9 +36,11 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   build-essential git pkg-config \
   "${PYBIN%-*}-venv" "${PYBIN%-*}-dev" \
+  "${PYBIN%-*}-setuptools" "${PYBIN%-*}-wheel" \
   unzip wget curl \
-  libasio-dev libtinyxml2-dev \
-  cmake ninja-build python3-dev python3-pip
+  libasio-dev libtinyxml2-dev libssl-dev \
+  cmake ninja-build python3-dev python3-pip \
+  patchelf
 
 # Java is required to build Fast-DDS-Gen (gradle)
 if ! dpkg -l | grep -qw openjdk-11-jre || ! dpkg -l | grep -qw openjdk-11-jdk; then

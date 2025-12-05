@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# ===== Ensure build dependencies =====
+echo "[INFO] Ensuring build dependencies..."
+python3 -m pip install --upgrade pip setuptools wheel || true
+
 # ===== User-tunable =====
 PREFIX_V3="${PREFIX_V3:-/opt/fast-dds-v3}"
 FASTDDSGEN_BIN="${FASTDDSGEN_BIN:-/opt/fast-dds-gen-v3/bin/fastddsgen}"

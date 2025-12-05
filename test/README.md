@@ -2,6 +2,13 @@
 
 This directory contains test scripts for verifying that lwrclpy sample code runs correctly on macOS and Ubuntu.
 
+## Test Scripts
+
+- `test_examples_mac.py` - Test suite for macOS
+- `test_examples_ubuntu.py` - Test suite for Ubuntu/Linux
+
+Both scripts test the same examples but are optimized for their respective platforms.
+
 ## Requirements
 
 ### macOS
@@ -135,4 +142,27 @@ The default timeout is 3 seconds. You can adjust the `timeout` parameter in the 
 - Each test runs independently and does not affect others
 - Video-related samples (`examples/video/`) have many dependencies and are not included in this test script
 - Service and action tests only perform basic startup tests since server/client pairs are not run simultaneously
+
+## Continuous Integration
+
+These test scripts are used in GitHub Actions CI/CD pipeline:
+
+- **Ubuntu CI**: Runs `test_examples_ubuntu.py` on Ubuntu 20.04/22.04
+- **macOS CI**: Runs `test_examples_mac.py` on macOS latest
+- **Build CI**: Creates wheel packages for both platforms after tests pass
+
+See `.github/workflows/` directory for CI configuration details.
+
+## Test Results Interpretation
+
+All tests should pass (100% success rate) for a successful build:
+
+- **Import Test**: Verifies basic lwrclpy functionality
+- **Simple Publish Test**: Tests node creation and message publishing
+- **Example Tests**: Each example should run without errors or timeouts
+
+If any test fails, check:
+1. Library dependencies are installed correctly
+2. FastDDS v3 is properly configured
+3. Python environment is set up correctly
 

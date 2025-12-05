@@ -10,6 +10,10 @@
 #   pip install dist/lwrclpy-*.whl
 set -euo pipefail
 
+# ----- Ensure build dependencies -----
+echo "[INFO] Ensuring build dependencies..."
+python3 -m pip install --upgrade pip setuptools wheel delocate || true
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPTS_DIR="${REPO_ROOT}/scripts"
 PKG_NAME="lwrclpy"

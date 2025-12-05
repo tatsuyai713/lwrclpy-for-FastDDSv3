@@ -45,6 +45,9 @@ brew update
 # NOTE: skip standalone 'asio' (newer APIs break legacy Fast DDS usage)
 brew install cmake ninja git pkg-config tinyxml2 wget curl swig gradle openssl@3
 
+# Ensure Python build dependencies
+"${PYBIN}" -m pip install --upgrade pip setuptools wheel || true
+
 # Java (for Fast-DDS-Gen)
 if ! /usr/libexec/java_home -V >/dev/null 2>&1; then
   brew install openjdk@17

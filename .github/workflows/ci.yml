@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test-ubuntu:
+    uses: ./.github/workflows/test-ubuntu.yml
+  
+  test-macos:
+    uses: ./.github/workflows/test-macos.yml
+  
+  build-ubuntu-wheels:
+    needs: [test-ubuntu]
+    uses: ./.github/workflows/build-ubuntu.yml
+  
+  build-macos-wheels:
+    needs: [test-macos]
+    uses: ./.github/workflows/build-macos.yml

@@ -1,5 +1,11 @@
 # lwrclpy — Zero-to-Run Guide (Fast DDS v3)
 
+[![CI](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/ci.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/ci.yml)
+[![Test Ubuntu](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-ubuntu.yml)
+[![Test macOS](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-macos.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-macos.yml)
+[![Build Ubuntu](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-ubuntu.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-ubuntu.yml)
+[![Build macOS](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-macos.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-macos.yml)
+
 ## Mac version is under development
 
 **lwrclpy** is an rclpy-compatible Python library built directly on Fast DDS v3. It ships ROS-like APIs (`Node`, `QoS`, `publisher`, `subscription`, `spin`) without ROS 2 distro/ABI constraints. Message fields can be set with ROS 2–style setters (`msg.data("hi")`) or plain attributes (`msg.data = "hi"`); lwrclpy clones messages on publish/receive so both styles work.
@@ -15,9 +21,11 @@
 1. [Quickstart (prebuilt wheel)](#quickstart-prebuilt-wheel)
 2. [Full build & package from this repo](#full-build--package-from-this-repo)
 3. [Examples](#examples)
-4. [ROS 2 interoperability](#ros-2-interoperability)
-5. [Troubleshooting](#troubleshooting)
-6. [License](#license)
+4. [Testing](#testing)
+5. [Continuous Integration](#continuous-integration)
+6. [ROS 2 interoperability](#ros-2-interoperability)
+7. [Troubleshooting](#troubleshooting)
+8. [License](#license)
 
 ---
 
@@ -179,6 +187,79 @@ python3 examples/actions/fibonacci_action_server.py
 # Terminal B
 python3 examples/actions/fibonacci_action_client.py
 ```
+
+---
+
+## Testing
+
+Comprehensive test suites are available for both macOS and Ubuntu to verify all examples work correctly:
+
+### Running Tests Locally
+
+**macOS:**
+```bash
+source ~/venv/bin/activate
+python3 test/test_examples_mac.py
+```
+
+**Ubuntu:**
+```bash
+source ~/venv/bin/activate
+python3 test/test_examples_ubuntu.py
+```
+
+### Test Coverage
+
+The test suites validate:
+- Basic lwrclpy imports and initialization
+- Node creation and message publishing
+- Publisher/Subscriber examples
+- Timer examples (wall_timer, oneshot_and_periodic)
+- Parameter handling
+- Executor examples (single/multi-threaded)
+- Guard conditions
+- Service examples (SetBool, Trigger)
+- Action examples (Fibonacci)
+
+All tests should pass with 100% success rate. See `test/README.md` for detailed documentation.
+
+---
+
+## Continuous Integration
+
+This project uses GitHub Actions for automated testing and building:
+
+### CI Workflows
+
+- **Test Ubuntu** (`.github/workflows/test-ubuntu.yml`)
+  - Tests on Ubuntu 20.04 and 22.04
+  - Python versions: 3.8, 3.9, 3.10, 3.11
+  - Runs full test suite for each combination
+
+- **Test macOS** (`.github/workflows/test-macos.yml`)
+  - Tests on macOS latest
+  - Python versions: 3.9, 3.10, 3.11, 3.12
+  - Validates Apple Silicon compatibility
+
+- **Build Ubuntu Wheels** (`.github/workflows/build-ubuntu.yml`)
+  - Builds distribution wheels for Ubuntu
+  - Tests wheel installation
+  - Uploads artifacts for releases
+
+- **Build macOS Wheels** (`.github/workflows/build-macos.yml`)
+  - Builds distribution wheels for macOS (Universal2)
+  - Tests wheel installation
+  - Uploads artifacts for releases
+
+Each build rebuilds FastDDS v3 from scratch to ensure clean builds without cache dependencies.
+
+### Automated Releases
+
+When a version tag (e.g., `v0.1.1`) is pushed:
+1. All tests run automatically
+2. Wheels are built for all supported platforms/Python versions
+3. GitHub Release is created with wheel artifacts
+4. Download wheels directly from the Releases page
 
 ---
 
