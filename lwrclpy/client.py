@@ -109,8 +109,8 @@ class Client:
 
 def _service_topics(name: str, prefix: str = ""):
     cleaned = name.lstrip("/")
-    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}"
-    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}"
+    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}Request"
+    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}Reply"
     if prefix:
         if not req.startswith(prefix):
             req = prefix + req
