@@ -23,7 +23,8 @@ python3 -m pip install --upgrade pip setuptools wheel || true
 command -v patchelf >/dev/null 2>&1 || {
   echo "[WARN] patchelf not found, attempting to install..."
   if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update && sudo apt-get install -y patchelf
+    DEBIAN_FRONTEND=noninteractive sudo apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive sudo apt-get install -qq -y patchelf
   else
     echo "[ERROR] Please install patchelf manually"
     exit 1

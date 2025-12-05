@@ -41,7 +41,8 @@ jobs:
           libasio-dev \
           libtinyxml2-dev \
           libssl-dev \
-          swig
+          swig \
+          patchelf
     
     - name: Install FastDDS v3
       run: |
