@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Minimal service client using std_msgs/srv/SetBool."""
+"""Minimal service client using std_srvs/srv/SetBool."""
 import time
 
 import rclpy
-from std_msgs.srv import SetBool
+from std_srvs.srv import SetBool
 
 
 def main():
