@@ -29,6 +29,7 @@ If you already have a wheel in `dist/` (e.g., `dist/lwrclpy-0.1.0-*.whl`), you c
 # 1) Create & activate a venv (recommended)
 python3 -m venv venv
 source venv/bin/activate
+pip install setuptools
 
 # 2) Install the wheel
 pip install dist/lwrclpy-*.whl
@@ -77,6 +78,9 @@ python3 -c "import fastdds; print('fastdds OK')"
 ### 2) Generate and install ROS DataTypes
 Generates all message/service/action bindings, applies SWIG patches, builds, stages as ROS-like packages, and exports env vars.
 ```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install setuptools
 bash scripts/install_ros_data_types.sh
 ```
 Notes:
@@ -89,6 +93,7 @@ This packages lwrclpy + vendored Fast DDS runtime + generated Python types from 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+pip install setuptools
 bash scripts/make_pip_package_with_runtime.sh
 ```
 Artifacts:
@@ -254,6 +259,7 @@ Reverse direction works the same (ROS 2 talker → lwrclpy listener).
 # 1) venv を作成して有効化（推奨）
 python3 -m venv venv
 source venv/bin/activate
+pip install setuptools
 
 # 2) ホイールをインストール
 pip install dist/lwrclpy-*.whl
@@ -301,6 +307,9 @@ python3 -c "import fastdds; print('fastdds OK')"
 ### 2) ROS DataTypes を生成・インストール
 全メッセージ/サービス/アクションを生成し、SWIG パッチを適用してビルド・配置、環境変数を設定します。
 ```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install setuptools
 bash scripts/install_ros_data_types.sh
 ```
 備考:
@@ -312,6 +321,7 @@ bash scripts/install_ros_data_types.sh
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+pip install setuptools
 bash scripts/make_pip_package_with_runtime.sh
 ```
 生成物:

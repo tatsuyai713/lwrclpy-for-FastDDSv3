@@ -22,12 +22,29 @@ class _ValueProxy:
         return self._v
 
     def __getattr__(self, name):
-        return getattr(self._v, name)
+        # Try name first, then name_ (SWIG trailing underscore convention)
+        try:
+            return getattr(self._v, name)
+        except AttributeError:
+            # SWIG may add trailing underscore for C++ member variables
+            return getattr(self._v, name + '_')
 
     def __repr__(self):
+        # For SWIG vectors, convert to list for better display
+        if hasattr(self._v, '__iter__') and hasattr(self._v, 'size'):
+            try:
+                return repr(list(self._v))
+            except Exception:
+                pass
         return repr(self._v)
 
     def __str__(self):
+        # For SWIG vectors, convert to list for better display
+        if hasattr(self._v, '__iter__') and hasattr(self._v, 'size'):
+            try:
+                return str(list(self._v))
+            except Exception:
+                pass
         return str(self._v)
 
     def __format__(self, spec):
@@ -49,6 +66,31 @@ class _ValueProxy:
 
     def __eq__(self, other):
         return self._v == other
+
+    def __ne__(self, other):
+        return self._v != other
+
+    def __lt__(self, other):
+        return self._v < other
+
+    def __le__(self, other):
+        return self._v <= other
+
+    def __gt__(self, other):
+        return self._v > other
+
+    def __ge__(self, other):
+        return self._v >= other
+
+    def __int__(self):
+        return int(self._v)
+
+    def __float__(self):
+        return float(self._v)
+
+    def __index__(self):
+        """Support for range(), slicing, and other operations requiring an integer."""
+        return int(self._v)
 
     def __add__(self, other):
         try:
@@ -84,6 +126,12 @@ def expose_callable_fields(msg):
             continue
         except Exception:
             continue
+        # Convert SWIG vectors to Python lists to avoid lifetime issues
+        if hasattr(val, '__iter__') and hasattr(val, 'size') and 'vector' in type(val).__name__:
+            try:
+                val = list(val)
+            except Exception:
+                pass
         try:
             setattr(msg, name, _ValueProxy(val))
         except Exception:

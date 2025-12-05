@@ -92,9 +92,12 @@ install_one(){
 
   # Re-export the class at package level for ROS-like import:
   #   from .String import String as String
-  local init="${dst_pkg}/__init__.py"
-  grep -q "from .${name} import ${name} as ${name}" "${init}" 2>/dev/null || \
-    echo "from .${name} import ${name} as ${name}" >> "${init}"
+  # BUT: skip this for action types - they will be handled by add_all_action_shims()
+  if [[ "${pkg_dir}" != */action ]]; then
+    local init="${dst_pkg}/__init__.py"
+    grep -q "from .${name} import ${name} as ${name}" "${init}" 2>/dev/null || \
+      echo "from .${name} import ${name} as ${name}" >> "${init}"
+  fi
 }
 
 # ========= Scan and install all generated types =========
@@ -137,6 +140,78 @@ PY
 }
 
 add_all_service_shims
+
+# ========= Add shims for actions (Goal/Result/Feedback/SendGoal/GetResult/FeedbackMessage) =========
+add_all_action_shims(){
+  # Find all action dirs and create ROS 2-style action class wrappers
+  while IFS= read -r actiondir; do
+    # List all *_Goal.py files to find action names
+    mapfile -t goals < <(find "${actiondir}" -maxdepth 1 -type f -name "*_Goal.py" -printf "%f\n" 2>/dev/null | sed 's/_Goal\.py$//')
+    for action_name in "${goals[@]}"; do
+      # Check required components exist
+      local goal="${action_name}_Goal"
+      local result="${action_name}_Result"
+      local feedback="${action_name}_Feedback"
+      local sendgoal_req="${action_name}_SendGoal_Request"
+      local sendgoal_res="${action_name}_SendGoal_Response"
+      local getresult_req="${action_name}_GetResult_Request"
+      local getresult_res="${action_name}_GetResult_Response"
+      local feedback_msg="${action_name}_FeedbackMessage"
+      
+      # Verify all required files exist
+      [[ -f "${actiondir}/${goal}.py" ]] || continue
+      [[ -f "${actiondir}/${result}.py" ]] || continue
+      [[ -f "${actiondir}/${feedback}.py" ]] || continue
+      
+      # Skip if wrapper already exists
+      [[ -f "${actiondir}/${action_name}.py" ]] && continue
+      
+      log "[ACTION SHIM] ${actiondir}/${action_name}.py"
+      cat > "${actiondir}/${action_name}.py" <<PY
+# Auto-generated ROS 2-style action wrapper for ${action_name}
+from .${goal} import ${goal} as Goal
+from .${result} import ${result} as Result
+from .${feedback} import ${feedback} as Feedback
+
+# Import SendGoal/GetResult/FeedbackMessage if they exist
+try:
+    from .${sendgoal_req} import ${sendgoal_req} as _SendGoal_Request
+    from .${sendgoal_res} import ${sendgoal_res} as _SendGoal_Response
+    SendGoal = type('SendGoal', (), {'Request': _SendGoal_Request, 'Response': _SendGoal_Response})
+except ImportError:
+    SendGoal = None
+
+try:
+    from .${getresult_req} import ${getresult_req} as _GetResult_Request
+    from .${getresult_res} import ${getresult_res} as _GetResult_Response
+    GetResult = type('GetResult', (), {'Request': _GetResult_Request, 'Response': _GetResult_Response})
+except ImportError:
+    GetResult = None
+
+try:
+    from .${feedback_msg} import ${feedback_msg} as FeedbackMessage
+except ImportError:
+    FeedbackMessage = None
+
+class ${action_name}:
+    """ROS 2-style action type for ${action_name}."""
+    Goal = Goal
+    Result = Result
+    Feedback = Feedback
+    SendGoal = SendGoal
+    GetResult = GetResult
+    FeedbackMessage = FeedbackMessage
+PY
+      
+      # Add to __init__.py
+      local init="${actiondir}/__init__.py"
+      grep -q "from .${action_name} import ${action_name} as ${action_name}" "${init}" 2>/dev/null || \
+        echo "from .${action_name} import ${action_name} as ${action_name}" >> "${init}"
+    done
+  done < <(find "${INSTALL_ROOT}" -type d -path "*/action")
+}
+
+add_all_action_shims
 
 # ===== Ensure dependent lib*.so are colocated with wrappers =====
 # Build index: basename -> full path

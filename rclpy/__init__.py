@@ -8,8 +8,9 @@ from lwrclpy import (
     Parameter,
     ParameterType,
     SetParametersResult,
+    shutdown as _core_shutdown,  # Use lwrclpy.shutdown (with force_exit)
 )
-from lwrclpy.context import init as _core_init, shutdown as _core_shutdown, ok as _core_ok
+from lwrclpy.context import init as _core_init, ok as _core_ok
 
 from .executors import (
     spin,

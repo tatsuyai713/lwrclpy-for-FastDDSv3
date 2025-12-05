@@ -74,6 +74,17 @@ INSTALL_ROOT="${STAGING_ROOT}" \
 BUILD_ROOT="${BUILD_ROOT}" \
 bash "${SCRIPTS_DIR}/install_python_types.sh"
 
+# ========= 1.5) Patch action/service types to add ROS 2-style wrapper classes =========
+if [[ -f "${SCRIPTS_DIR}/patch_action_types.py" ]]; then
+  echo "[INFO] Patching action types to add ROS 2-style wrapper classes…"
+  python3 "${SCRIPTS_DIR}/patch_action_types.py" "${STAGING_ROOT}"
+fi
+
+if [[ -f "${SCRIPTS_DIR}/patch_service_types.py" ]]; then
+  echo "[INFO] Patching service types to add ROS 2-style wrapper classes…"
+  python3 "${SCRIPTS_DIR}/patch_service_types.py" "${STAGING_ROOT}"
+fi
+
 # ========= 2) Stage lwrclpy pure-Python sources =========
 echo "[INFO] Staging 'lwrclpy' sources…"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/lwrclpy/" "${STAGING_ROOT}/lwrclpy/"
@@ -243,6 +254,58 @@ while IFS= read -r so; do
   esac
   patchelf --force-rpath --set-rpath "${PATCHED_RPATH}" "$so" || true
 done < <(find "${STAGING_ROOT}" -type f -name '*.so' | sort)
+
+# ========= 6.5) Patch action/srv __init__.py to expose wrapper classes =========
+if [[ -f "${SCRIPTS_DIR}/patch_action_types.py" ]]; then
+  echo "[INFO] Updating action/srv __init__.py files to expose wrapper classes…"
+  
+  # Patch action directories
+  find "${STAGING_ROOT}" -type d -path "*/action" | while read -r type_dir; do
+    for type_file in "${type_dir}"/*.py; do
+      [[ ! -f "${type_file}" ]] && continue
+      [[ "${type_file}" == *"__init__.py" ]] && continue
+      # Skip files that start with underscore (like _FibonacciWrapper.so or internal helpers)
+      type_basename=$(basename "${type_file}")
+      [[ "${type_basename}" == _* ]] && continue
+      
+      type_name=$(basename "${type_file}" .py)
+      init_file="${type_dir}/__init__.py"
+      
+      # Check if wrapper class exists in the file
+      if grep -q "^class ${type_name}:" "${type_file}"; then
+        # Import the wrapper class from the module
+        if ! grep -q "from \.${type_name} import ${type_name}" "${init_file}" 2>/dev/null; then
+          echo "# Import ${type_name} wrapper class" >> "${init_file}"
+          echo "from .${type_name} import ${type_name}" >> "${init_file}"
+          echo "[INFO] Added ${type_name} class import to ${init_file}"
+        fi
+      fi
+    done
+  done
+  
+  # Patch srv directories  
+  find "${STAGING_ROOT}" -type d -path "*/srv" | while read -r type_dir; do
+    for type_file in "${type_dir}"/*.py; do
+      [[ ! -f "${type_file}" ]] && continue
+      [[ "${type_file}" == *"__init__.py" ]] && continue
+      [[ "${type_file}" == *"_Request.py" ]] && continue
+      [[ "${type_file}" == *"_Response.py" ]] && continue
+      # Skip files that start with underscore
+      type_basename=$(basename "${type_file}")
+      [[ "${type_basename}" == _* ]] && continue
+      
+      type_name=$(basename "${type_file}" .py)
+      init_file="${type_dir}/__init__.py"
+      
+      # For srv files, import the service wrapper (e.g., CancelGoal)
+      if ! grep -q "from \.${type_name} import ${type_name}" "${init_file}" 2>/dev/null; then
+        echo "# Import ${type_name} service" >> "${init_file}"
+        echo "from .${type_name} import ${type_name}" >> "${init_file}"
+        echo "[INFO] Added ${type_name} service import to ${init_file}"
+      fi
+    done
+  done
+fi
 
 # ========= 7) Make wheel metadata (platform-specific via bdist_wheel) =========
 echo "[INFO] Writing packaging metadata…"

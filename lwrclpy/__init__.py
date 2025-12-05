@@ -21,7 +21,15 @@ try:
 except Exception:
     pass
 
-from .context import init, shutdown, ok, get_participant
+from .context import init, ok, get_participant
+from .context import shutdown as _context_shutdown
+
+def shutdown():
+    """Shutdown lwrclpy and exit cleanly.
+    
+    This uses force_exit=True by default to avoid Fast DDS v3 "double free" errors.
+    """
+    _context_shutdown(force_exit=True)
 from .executors import spin, spin_once, spin_some, SingleThreadedExecutor, MultiThreadedExecutor
 from .node import Node, Rate, create_node, create_rate
 from .parameters import Parameter, ParameterType, SetParametersResult

@@ -116,6 +116,8 @@ class Node:
         self._topics: dict[str, tuple[object, bool]] = {}  # resolved name -> (Topic, owned)
         self._publishers = []
         self._subscriptions = []
+        self._clients = []
+        self._services = []
         self._timers = []
         self._guard_conditions = []
         self._callback_queue = []
@@ -261,12 +263,16 @@ class Node:
     def create_client(self, srv_type, srv_name: str, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
         resolved = resolve_name(srv_name, self._namespace, self._name)
-        return Client(srv_type, resolved, qos, topic_prefix=self._service_prefix, enqueue_cb=self._enqueue_callback)
+        client = Client(srv_type, resolved, qos, topic_prefix=self._service_prefix, enqueue_cb=self._enqueue_callback)
+        self._clients.append(client)
+        return client
 
     def create_service(self, srv_type, srv_name: str, callback, qos_profile: QoSProfile | int = 10, *, callback_group=None):
         qos = qos_profile if isinstance(qos_profile, QoSProfile) else QoSProfile(depth=int(qos_profile))
         resolved = resolve_name(srv_name, self._namespace, self._name)
-        return Service(srv_type, resolved, callback, qos, topic_prefix=self._service_prefix)
+        service = Service(srv_type, resolved, callback, qos, topic_prefix=self._service_prefix)
+        self._services.append(service)
+        return service
 
     def create_action_server(self, action_type, action_name: str, execute_callback, **kwargs):
         from .action import ActionServer
@@ -309,36 +315,58 @@ class Node:
         return self._name
 
     def destroy_node(self):
+        # Cancel timers first
         for t in self._timers:
             try:
                 t.cancel()
             except Exception:
                 pass
         self._timers.clear()
+        
+        # Destroy clients
+        for client in self._clients:
+            try:
+                client.destroy()
+            except Exception:
+                pass
+        self._clients.clear()
+        
+        # Destroy services
+        for service in self._services:
+            try:
+                service.destroy()
+            except Exception:
+                pass
+        self._services.clear()
+        
+        # Destroy publishers
         for pub in self._publishers:
             try:
                 pub.destroy()
             except Exception:
                 pass
         self._publishers.clear()
+        
+        # Destroy subscriptions
         for sub in self._subscriptions:
             try:
                 sub.destroy()
             except Exception:
                 pass
         self._subscriptions.clear()
+        
+        # Destroy guard conditions
         for gc in self._guard_conditions:
             try:
                 gc.destroy()
             except Exception:
                 pass
         self._guard_conditions.clear()
-        for name, (tobj, owned) in list(self._topics.items()):
-            try:
-                if owned:
-                    self._participant.delete_topic(tobj)
-            except Exception:
-                pass
+        
+        # Note: Topics are managed by Fast DDS and shared across multiple
+        # DataWriters/DataReaders. We don't delete them explicitly to avoid
+        # double-free issues. Fast DDS will clean them up when the participant
+        # is destroyed.
         self._topics.clear()
 
     # ------------- internal helpers -----------------

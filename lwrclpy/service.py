@@ -4,7 +4,7 @@ from .qos import QoSProfile
 from .typesupport import RegisteredType
 from .utils import resolve_service_type, SERVICE_REQUEST_PREFIX, SERVICE_RESPONSE_PREFIX
 from .utils import get_or_create_topic
-from .context import get_participant
+from .context import get_participant, track_entity, untrack_entity
 
 
 class Service:
@@ -52,20 +52,40 @@ class Service:
             self._request_cls,
             enqueue_cb=lambda cb, msg: cb(msg),
         )
+        
+        # Track for proper cleanup
+        track_entity(self)
 
     def _make_topic(self, name: str, type_name: str):
         topic_obj, _ = get_or_create_topic(self._participant, name, type_name)
         return topic_obj
 
     def destroy(self):
-        self._request_sub.destroy()
-        self._response_pub.destroy()
+        """Clean up service resources in the correct order."""
+        # Untrack from global cleanup
+        untrack_entity(self)
+        
+        # Destroy subscription first (stop receiving requests)
+        if hasattr(self, '_request_sub') and self._request_sub:
+            try:
+                self._request_sub.destroy()
+            except Exception:
+                pass
+            self._request_sub = None
+        
+        # Then destroy publisher
+        if hasattr(self, '_response_pub') and self._response_pub:
+            try:
+                self._response_pub.destroy()
+            except Exception:
+                pass
+            self._response_pub = None
 
 
 def _service_topics(name: str, prefix: str = ""):
     cleaned = name.lstrip("/")
-    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}"
-    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}"
+    req = f"{SERVICE_REQUEST_PREFIX}{cleaned}Request"
+    res = f"{SERVICE_RESPONSE_PREFIX}{cleaned}Reply"
     if prefix:
         if not req.startswith(prefix):
             req = prefix + req

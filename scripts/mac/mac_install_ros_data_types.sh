@@ -69,6 +69,28 @@ if [[ -f "${PY_ALIAS_SCRIPT}" ]]; then
   fi
 fi
 
+# --- 3.1.1) add ROS 2-style Service wrapper classes (patch_service_types.py) ---
+PY_SERVICE_PATCH="${ROOT_DIR}/scripts/patch_service_types.py"
+if [[ -f "${PY_SERVICE_PATCH}" ]]; then
+  echo "[INFO] Injecting ROS 2-style Service wrapper classes into generated Python packages..."
+  if [[ -w /opt/fast-dds-v3-libs/python/src ]]; then
+    python3 "${PY_SERVICE_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch service types"
+  else
+    sudo python3 "${PY_SERVICE_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch service types"
+  fi
+fi
+
+# --- 3.1.2) add ROS 2-style Action wrapper classes (patch_action_types.py) ---
+PY_ACTION_PATCH="${ROOT_DIR}/scripts/patch_action_types.py"
+if [[ -f "${PY_ACTION_PATCH}" ]]; then
+  echo "[INFO] Injecting ROS 2-style Action wrapper classes into generated Python packages..."
+  if [[ -w /opt/fast-dds-v3-libs/python/src ]]; then
+    python3 "${PY_ACTION_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch action types"
+  else
+    sudo python3 "${PY_ACTION_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch action types"
+  fi
+fi
+
 # --- 3.2) Ensure fastdds Python module is importable (macOS default builds emit .dylib) ---
 ensure_fastdds_python_so() {
   local fastdds_root="$1"

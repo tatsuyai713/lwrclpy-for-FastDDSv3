@@ -65,6 +65,9 @@ def _uuid_bytes(field) -> bytes:
         return b""
     if hasattr(field, "uuid"):
         data = getattr(field, "uuid")
+        # If uuid is a method, call it
+        if callable(data):
+            data = data()
         return bytes(int(x) & 0xFF for x in data)
     try:
         return bytes(int(x) & 0xFF for x in field)
@@ -81,7 +84,11 @@ def _copy_goal_id(goal_id_field):
         new_field = type("GoalID", (), {})()
     if hasattr(goal_id_field, "uuid"):
         try:
-            setattr(new_field, "uuid", list(getattr(goal_id_field, "uuid")))
+            uuid_data = getattr(goal_id_field, "uuid")
+            # If uuid is a method, call it
+            if callable(uuid_data):
+                uuid_data = uuid_data()
+            setattr(new_field, "uuid", list(uuid_data))
             return new_field
         except Exception:
             pass
@@ -121,6 +128,8 @@ class _ServerGoalHandle:
         self._active = True
         self._cancel_requested = False
         self._executing = False
+        self._final_result = None
+        self._final_status = None
 
     @property
     def is_active(self) -> bool:
@@ -154,19 +163,25 @@ class _ServerGoalHandle:
         if not self._active:
             return
         self._active = False
-        self._server._complete_goal(self._goal_id, result, _STATUS_SUCCEEDED)
+        # Store result for later (will be finalized when execute_callback returns)
+        self._final_result = result
+        self._final_status = _STATUS_SUCCEEDED
 
     def abort(self, result=None):
         if not self._active:
             return
         self._active = False
-        self._server._complete_goal(self._goal_id, result, _STATUS_ABORTED)
+        # Store result for later (will be finalized when execute_callback returns)
+        self._final_result = result
+        self._final_status = _STATUS_ABORTED
 
     def canceled(self, result=None):
         if not self._active:
             return
         self._active = False
-        self._server._complete_goal(self._goal_id, result, _STATUS_CANCELED)
+        # Store result for later (will be finalized when execute_callback returns)
+        self._final_result = result
+        self._final_status = _STATUS_CANCELED
 
 
 class ActionServer:
@@ -222,13 +237,13 @@ class ActionServer:
         qos = QoSProfile()
         self._send_goal_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_response", _register_type(self._send_goal_res_cls)),
+            self._create_topic(f"{self._send_goal_topic}Reply", _register_type(self._send_goal_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._send_goal_res_cls)[1],
         )
         self._get_result_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_response", _register_type(self._get_result_res_cls)),
+            self._create_topic(f"{self._get_result_topic}Reply", _register_type(self._get_result_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._get_result_res_cls)[1],
         )
@@ -257,7 +272,7 @@ class ActionServer:
                 self._goal_status_ctor = None
         self._cancel_res_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_response", _register_type(self._cancel_res_cls)),
+            self._create_topic(f"{self._cancel_topic}Reply", _register_type(self._cancel_res_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._cancel_res_cls)[1],
         )
@@ -268,7 +283,7 @@ class ActionServer:
 
         self._send_goal_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_request", _register_type(self._send_goal_req_cls)),
+            self._create_topic(f"{self._send_goal_topic}Request", _register_type(self._send_goal_req_cls)),
             qos,
             self._on_send_goal,
             send_goal_req_ctor,
@@ -276,7 +291,7 @@ class ActionServer:
         )
         self._get_result_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_request", _register_type(self._get_result_req_cls)),
+            self._create_topic(f"{self._get_result_topic}Request", _register_type(self._get_result_req_cls)),
             qos,
             self._on_get_result,
             get_result_req_ctor,
@@ -284,7 +299,7 @@ class ActionServer:
         )
         self._cancel_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_request", _register_type(self._cancel_req_cls)),
+            self._create_topic(f"{self._cancel_topic}Request", _register_type(self._cancel_req_cls)),
             qos,
             self._on_cancel,
             cancel_req_ctor,
@@ -297,11 +312,26 @@ class ActionServer:
 
     def _on_send_goal(self, request_msg):
         goal_id = getattr(request_msg, "goal_id", None)
+        goal_attr = getattr(request_msg, "goal", None)
+        # If goal is callable, call it to get the actual message
+        if callable(goal_attr):
+            goal_msg = goal_attr()
+        else:
+            goal_msg = goal_attr
+        # Expose callable fields as attributes for ROS 2 compatibility
+        try:
+            from .message_utils import expose_callable_fields
+            expose_callable_fields(goal_msg)
+        except Exception:
+            pass
         key = _uuid_bytes(goal_id)
         accepted = True
-        if self._goal_callback:
-            resp = self._goal_callback(request_msg.goal)
-            accepted = resp == GoalResponse.ACCEPT
+        if self._goal_callback is not None:
+            try:
+                resp = self._goal_callback(goal_msg)
+                accepted = resp == GoalResponse.ACCEPT
+            except Exception:
+                accepted = False
 
         response = self._send_goal_res_cls()
         try:
@@ -311,7 +341,7 @@ class ActionServer:
         _zero_stamp(response)
 
         if accepted:
-            handle = _ServerGoalHandle(self, _copy_goal_id(goal_id), request_msg.goal)
+            handle = _ServerGoalHandle(self, _copy_goal_id(goal_id), goal_msg)
             with self._lock:
                 self._goal_handles[key] = handle
             self._set_status(goal_id, _STATUS_ACCEPTED)
@@ -363,12 +393,28 @@ class ActionServer:
         def _run():
             try:
                 result = self._execute_callback(goal_handle)
-                if asyncio.iscoroutine(result):
-                    result = asyncio.run(result)
-                if result is not None and goal_handle.is_active:
-                    goal_handle.succeed(result)
+                # Check if result is a coroutine (handle async execute_callback)
+                # Skip iscoroutine for SWIG objects (they're not hashable)
+                try:
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
+                except TypeError:
+                    # Result is a SWIG object, not a coroutine
+                    pass
+                
+                # Determine final result and status
+                # Priority: returned result > final_result from succeed/abort/canceled
+                final_result = result if result is not None else goal_handle._final_result
+                final_status = goal_handle._final_status if goal_handle._final_status is not None else _STATUS_SUCCEEDED
+                
+                # Complete the goal with the final result
+                if goal_handle.is_active:
+                    goal_handle._active = False
+                self._complete_goal(goal_handle._goal_id, final_result, final_status)
             except Exception:
-                goal_handle.abort()
+                if goal_handle.is_active:
+                    goal_handle._active = False
+                self._complete_goal(goal_handle._goal_id, None, _STATUS_ABORTED)
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -383,20 +429,26 @@ class ActionServer:
             pass
         self._feedback_pub.publish(msg)
 
+    def _build_result_obj(self, result):
+        """Build result object from provided result, copying attributes."""
+        result_obj = self._result_cls()
+        if result is not None:
+            for attr in dir(result):
+                if attr.startswith("_"):
+                    continue
+                try:
+                    val = getattr(result, attr)
+                    # Skip methods and callables except for SWIG getters
+                    if callable(val) and not hasattr(val, '__self__'):
+                        continue
+                    setattr(result_obj, attr, val)
+                except Exception:
+                    pass
+        return result_obj
+
     def _complete_goal(self, goal_id, result, status_code):
         key = _uuid_bytes(goal_id)
-        if isinstance(result, self._result_cls):
-            result_obj = result
-        else:
-            result_obj = self._result_cls()
-            if result is not None:
-                for attr in dir(result):
-                    if attr.startswith("_"):
-                        continue
-                    try:
-                        setattr(result_obj, attr, getattr(result, attr))
-                    except Exception:
-                        pass
+        result_obj = self._build_result_obj(result)
         goal_id_copy = _copy_goal_id(goal_id)
         with self._lock:
             self._results[key] = (status_code, result_obj, goal_id_copy)
@@ -562,19 +614,19 @@ class ActionClient:
         qos = QoSProfile()
         self._send_goal_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_request", _register_type(self._send_goal_req_cls)),
+            self._create_topic(f"{self._send_goal_topic}Request", _register_type(self._send_goal_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._send_goal_req_cls)[1],
         )
         self._get_result_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_request", _register_type(self._get_result_req_cls)),
+            self._create_topic(f"{self._get_result_topic}Request", _register_type(self._get_result_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._get_result_req_cls)[1],
         )
         self._cancel_pub = Publisher(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_request", _register_type(self._cancel_req_cls)),
+            self._create_topic(f"{self._cancel_topic}Request", _register_type(self._cancel_req_cls)),
             qos,
             msg_ctor=resolve_generated_type(self._cancel_req_cls)[1],
         )
@@ -586,7 +638,7 @@ class ActionClient:
 
         self._send_goal_res_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._send_goal_topic}/_response", _register_type(self._send_goal_res_cls)),
+            self._create_topic(f"{self._send_goal_topic}Reply", _register_type(self._send_goal_res_cls)),
             qos,
             self._on_send_goal_response,
             send_goal_res_ctor,
@@ -594,7 +646,7 @@ class ActionClient:
         )
         self._result_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._get_result_topic}/_response", _register_type(self._get_result_res_cls)),
+            self._create_topic(f"{self._get_result_topic}Reply", _register_type(self._get_result_res_cls)),
             qos,
             self._on_result_response,
             get_result_res_ctor,
@@ -610,7 +662,7 @@ class ActionClient:
         )
         self._cancel_res_sub = Subscription(
             self._participant,
-            self._create_topic(f"{self._cancel_topic}/_response", _register_type(self._cancel_res_cls)),
+            self._create_topic(f"{self._cancel_topic}Reply", _register_type(self._cancel_res_cls)),
             qos,
             self._on_cancel_response,
             cancel_res_ctor,
@@ -692,6 +744,22 @@ class ActionClient:
             self._feedback_callbacks.pop(key, None)
             self._goal_handles.pop(key, None)
         if future:
+            # Expose callable fields for ROS 2 compatibility
+            try:
+                from .message_utils import expose_callable_fields, _ValueProxy
+                result = getattr(msg, "result", None)
+                if result:
+                    # If result is wrapped in _ValueProxy, unwrap it
+                    if isinstance(result, _ValueProxy):
+                        result = result()
+                    expose_callable_fields(result)
+                    # Re-wrap as _ValueProxy after exposing fields
+                    try:
+                        setattr(msg, "result", _ValueProxy(result))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             future.set_result(msg)
 
     def _request_cancel(self, goal_id) -> Future:
@@ -730,6 +798,19 @@ class ActionClient:
         cb = self._feedback_callbacks.get(key)
         if cb:
             try:
+                # Expose callable fields for ROS 2 compatibility
+                from .message_utils import expose_callable_fields, _ValueProxy
+                feedback = getattr(msg, "feedback", None)
+                if feedback:
+                    # If feedback is wrapped in _ValueProxy, unwrap it
+                    if isinstance(feedback, _ValueProxy):
+                        feedback = feedback()
+                    expose_callable_fields(feedback)
+                    # Re-wrap as _ValueProxy after exposing fields
+                    try:
+                        setattr(msg, "feedback", _ValueProxy(feedback))
+                    except Exception:
+                        pass
                 cb(msg)
             except Exception:
                 pass

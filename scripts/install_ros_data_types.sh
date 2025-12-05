@@ -19,7 +19,7 @@ which swig
 swig -version
 
 # --- Step 1: generate & build all message bindings ---
-#bash gen_python_types.sh
+bash gen_python_types.sh
 
 # --- Step 2: install generated packages into the target prefix ---
 current_dir=$(pwd)
@@ -35,6 +35,20 @@ PY_ALIAS_SCRIPT="${current_dir}/third_party/ros-data-types-for-fastdds/scripts/a
 if [[ -f "${PY_ALIAS_SCRIPT}" ]]; then
   echo "[INFO] Injecting Request/Response service aliases into generated Python packages..."
   python3 "${PY_ALIAS_SCRIPT}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to install service aliases"
+fi
+
+# --- Step 2.1.1: add ROS 2-style Service wrapper classes (patch_service_types.py) ---
+PY_SERVICE_PATCH="${current_dir}/patch_service_types.py"
+if [[ -f "${PY_SERVICE_PATCH}" ]]; then
+  echo "[INFO] Injecting ROS 2-style Service wrapper classes into generated Python packages..."
+  sudo python3 "${PY_SERVICE_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch service types"
+fi
+
+# --- Step 2.2: add ROS 2-style Action wrapper classes to generated Python modules ---
+PY_ACTION_PATCH="${current_dir}/patch_action_types.py"
+if [[ -f "${PY_ACTION_PATCH}" ]]; then
+  echo "[INFO] Injecting ROS 2-style Action wrapper classes into generated Python packages..."
+  sudo python3 "${PY_ACTION_PATCH}" /opt/fast-dds-v3-libs/python/src || echo "[WARN] Failed to patch action types"
 fi
 
 # --- Step 2.5: collect all lib*.so into a single location (idempotent) ---

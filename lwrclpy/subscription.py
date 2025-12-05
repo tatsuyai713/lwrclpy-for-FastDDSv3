@@ -49,6 +49,10 @@ class _ReaderListener(fastdds.DataReaderListener):
         self._user_cb = user_cb
         self._msg_ctor = msg_ctor
 
+    def on_subscription_matched(self, reader, info):
+        """Called when subscription matches/unmatches with a publisher."""
+        pass
+    
     def on_data_available(self, reader):
         info = fastdds.SampleInfo()
         data = self._msg_ctor()
@@ -85,6 +89,7 @@ class Subscription:
         self._topic = topic
         self._callback = callback
         self._msg_ctor = msg_ctor
+        self._destroyed = False
 
         # Create Subscriber
         sub_qos = fastdds.SubscriberQos()
@@ -121,19 +126,16 @@ class Subscription:
         self._reader = reader
 
     def destroy(self) -> None:
-        """Tear down DataReader/Subscriber in the right order, swallowing errors."""
-        if getattr(self, "_reader", None):
-            try:
-                self._subscriber.delete_datareader(self._reader)
-            except Exception:
-                pass
-            self._reader = None
-        if getattr(self, "_subscriber", None):
-            try:
-                self._participant.delete_subscriber(self._subscriber)
-            except Exception:
-                pass
-            self._subscriber = None
+        """Mark as destroyed. Fast DDS will clean up resources automatically."""
+        if self._destroyed:
+            return
+        self._destroyed = True
+        
+        # Don't explicitly delete Fast DDS entities - let Fast DDS handle cleanup
+        # Attempting to delete them causes "double free" errors
+        # Fast DDS will automatically clean up when the participant is destroyed
+        self._reader = None
+        self._subscriber = None
 
     def get_topic_name(self) -> str:
         try:

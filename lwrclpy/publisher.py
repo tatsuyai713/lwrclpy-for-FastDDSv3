@@ -35,6 +35,7 @@ class Publisher:
         self._participant = participant
         self._topic = topic
         self._msg_ctor = msg_ctor
+        self._destroyed = False
 
         # Create Publisher
         pub_qos = fastdds.PublisherQos()
@@ -88,16 +89,13 @@ class Publisher:
             return False
 
     def destroy(self) -> None:
-        """Tear down DataWriter/Publisher in the right order, swallowing errors."""
-        if getattr(self, "_writer", None):
-            try:
-                self._publisher.delete_datawriter(self._writer)
-            except Exception:
-                pass
-            self._writer = None
-        if getattr(self, "_publisher", None):
-            try:
-                self._participant.delete_publisher(self._publisher)
-            except Exception:
-                pass
-            self._publisher = None
+        """Mark as destroyed. Fast DDS will clean up resources automatically."""
+        if self._destroyed:
+            return
+        self._destroyed = True
+        
+        # Don't explicitly delete Fast DDS entities - let Fast DDS handle cleanup
+        # Attempting to delete them causes "double free" errors
+        # Fast DDS will automatically clean up when the participant is destroyed
+        self._writer = None
+        self._publisher = None
