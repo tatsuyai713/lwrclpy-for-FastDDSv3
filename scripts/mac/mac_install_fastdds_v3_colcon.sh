@@ -190,10 +190,14 @@ GEN_SRC_DIR="$(find "${WS}/src" -maxdepth 2 -type d \( -iname 'fastddsgen' -o -i
 [[ -n "${GEN_SRC_DIR}" ]] || die "Fast-DDS-Gen repo not found under ${WS}/src"
 log "Building fastddsgen from: ${GEN_SRC_DIR}"
 
+# Ensure Java 17 is used for Gradle (Gradle 7.6 doesn't support Java 21+)
+export JAVA_HOME="$(/usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home)"
+log "Using JAVA_HOME=${JAVA_HOME}"
+
 sudo mkdir -p "${GEN_PREFIX}"
 pushd "${GEN_SRC_DIR}" >/dev/null
   ./gradlew --no-daemon clean assemble
-  sudo ./gradlew --no-daemon install --install_path="${GEN_PREFIX}"
+  sudo JAVA_HOME="${JAVA_HOME}" ./gradlew --no-daemon install --install_path="${GEN_PREFIX}"
 popd >/dev/null
 
 export PATH="${GEN_PREFIX}/bin:${PATH}"
