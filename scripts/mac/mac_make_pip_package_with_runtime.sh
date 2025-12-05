@@ -67,6 +67,20 @@ else
     bash "${REPO_ROOT}/scripts/mac/mac_install_python_types.sh"
 fi
 
+echo "[INFO] Patching action types to add ROS 2-style wrapper classes"
+if [[ -f "${SCRIPTS_DIR}/patch_action_types.py" ]]; then
+  python3 "${SCRIPTS_DIR}/patch_action_types.py" "${STAGING_ROOT}"
+else
+  echo "[WARN] patch_action_types.py not found, skipping action type patching"
+fi
+
+echo "[INFO] Patching service types to add ROS 2-style wrapper classes"
+if [[ -f "${SCRIPTS_DIR}/patch_service_types.py" ]]; then
+  python3 "${SCRIPTS_DIR}/patch_service_types.py" "${STAGING_ROOT}"
+else
+  echo "[WARN] patch_service_types.py not found, skipping service type patching"
+fi
+
 echo "[INFO] Staging lwrclpy sources"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' "${REPO_ROOT}/lwrclpy/" "${STAGING_ROOT}/lwrclpy/"
 
