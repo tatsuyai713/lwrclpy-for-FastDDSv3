@@ -57,7 +57,7 @@ jobs:
         export CMAKE_PREFIX_PATH="/opt/fast-dds-v3:${CMAKE_PREFIX_PATH:-}"
         export DYLD_LIBRARY_PATH="/opt/fast-dds-v3/lib:/opt/fast-dds-v3/lib64:${DYLD_LIBRARY_PATH:-}"
         export PYTHONPATH="/opt/fast-dds-v3/lib/python$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:${PYTHONPATH:-}"
-        bash scripts/mac/mac_gen_python_types.sh
+        cd scripts/mac && bash mac_gen_python_types.sh
     
     - name: Build wheel
       run: |
