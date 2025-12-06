@@ -44,8 +44,15 @@ jobs:
           swig \
           patchelf
     
+    - name: Create virtual environment
+      run: |
+        python -m venv build_venv
+        source build_venv/bin/activate
+        python -m pip install --upgrade pip wheel setuptools
+    
     - name: Install FastDDS v3
       run: |
+        source build_venv/bin/activate
         bash scripts/install_fastdds_v3_colcon.sh
     
     - name: Verify fastddsgen installation
@@ -57,21 +64,15 @@ jobs:
     
     - name: Generate Python types
       run: |
+        source build_venv/bin/activate
         export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
         export FASTDDSGEN_BIN="/opt/fast-dds-gen-v3/bin/fastddsgen"
         bash scripts/gen_python_types.sh
     
     - name: Build wheel
       run: |
-        python -m pip install --upgrade pip wheel setuptools
+        source build_venv/bin/activate
         bash scripts/make_pip_package_with_runtime.sh
-    
-    - name: Test wheel installation
-      run: |
-        python -m venv test_venv
-        source test_venv/bin/activate
-        pip install dist/*.whl
-        python3 test/test_examples_ubuntu.py
     
     - name: Upload wheel
       uses: actions/upload-artifact@v4

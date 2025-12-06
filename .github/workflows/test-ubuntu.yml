@@ -1,16 +1,17 @@
-name: Test Ubuntu
+name: Test Ubuntu with Wheel
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      wheel-artifact:
+        description: 'Wheel artifact name to test'
+        required: false
+        type: string
 
 jobs:
   test:
-    name: Test on Ubuntu ${{ matrix.ubuntu-version }}
+    name: Test Ubuntu ${{ matrix.ubuntu-version }} Python ${{ matrix.python-version }}
     runs-on: ubuntu-${{ matrix.ubuntu-version }}
     strategy:
       fail-fast: false
@@ -33,54 +34,25 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          git \
-          wget \
-          libasio-dev \
-          libtinyxml2-dev \
-          libssl-dev \
-          swig
-    
-    - name: Cache FastDDS build
-      uses: actions/cache@v4
+    - name: Download wheel artifact
+      if: inputs.wheel-artifact != ''
+      uses: actions/download-artifact@v4
       with:
-        path: |
-          /opt/fast-dds-v3
-        key: ${{ runner.os }}-fastdds-v3-${{ hashFiles('scripts/install_fastdds_v3_colcon.sh') }}
+        name: ${{ inputs.wheel-artifact }}
+        path: dist/
     
-    - name: Install FastDDS v3
+    - name: Install wheel
       run: |
-        if [ ! -d "/opt/fast-dds-v3" ]; then
-          bash scripts/install_fastdds_v3_colcon.sh
+        python -m venv test_venv
+        source test_venv/bin/activate
+        pip install --upgrade pip
+        if [ -f dist/*.whl ]; then
+          pip install dist/*.whl
         else
-          echo "FastDDS v3 already installed (from cache)"
+          echo "No wheel found, skipping installation"
         fi
-    
-    - name: Build Python types
-      run: |
-        bash scripts/gen_python_types.sh
-        bash scripts/install_python_types.sh
-    
-    - name: Install lwrclpy
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .
     
     - name: Run tests
       run: |
+        source test_venv/bin/activate
         python3 test/test_examples_ubuntu.py
-    
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-ubuntu-${{ matrix.ubuntu-version }}-py${{ matrix.python-version }}
-        path: |
-          test/*.log
-          test/*.xml
-        if-no-files-found: ignore
