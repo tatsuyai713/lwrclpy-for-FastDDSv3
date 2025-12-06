@@ -42,13 +42,6 @@ need java
 [[ -d "${ROS_TYPES_ROOT}/src" ]] || { echo "[FATAL] ROS_TYPES_ROOT/src not found: ${ROS_TYPES_ROOT}/src"; exit 1; }
 [[ -f "${PATCH_PY}" ]] || { echo "[FATAL] patch script missing: ${PATCH_PY}"; exit 1; }
 
-# Debug info
-echo "[DEBUG] fastddsgen: ${FASTDDSGEN_BIN}"
-echo "[DEBUG] swig version: $(swig -version | head -2)"
-echo "[DEBUG] java version: $(java -version 2>&1 | head -1)"
-"${FASTDDSGEN_BIN}" -version || echo "[WARN] fastddsgen -version failed"
-"${FASTDDSGEN_BIN}" -help 2>&1 | grep -i python || echo "[WARN] fastddsgen may not support -python"
-
 mkdir -p "${BUILD_ROOT}" "${GEN_SRC_ROOT}" "${INC_STAGE_ROOT}"
 
 # ===== Auto-detect CMake package dirs for fastdds / fastcdr =====
@@ -123,7 +116,6 @@ gen_one() {
   mkdir -p "${outdir}"
 
   echo "[GEN] ${rel} -> ${outdir}"
-  echo "[DEBUG] Running: ${FASTDDSGEN_BIN} -python -cs -typeros2 -language c++ -d ${outdir} -I ${GEN_SRC_ROOT} -replace ${idl_path}"
   # -cs: generate TypeObject support; -typeros2: ROS2-friendly types; -language c++
   if ! "${FASTDDSGEN_BIN}" -python -cs -typeros2 -language c++ \
         -d "${outdir}" \
@@ -137,61 +129,35 @@ gen_one() {
   
   # fastddsgen v4.0.4+ recreates the full source path structure inside the output directory
   # Move generated files from nested structure to the expected flat location
-  echo "[DEBUG] Checking for nested structure in ${outdir}"
-  echo "[DEBUG] GEN_SRC_ROOT=${GEN_SRC_ROOT}"
-  echo "[DEBUG] Listing contents of ${outdir}:"
-  ls -la "${outdir}" || true
-  
-  # fastddsgen creates subdirectories matching parts of the absolute path
-  # Look for any subdirectory that contains .i files and move them up
   local found_nested=false
   
   # Use find to get all directories, avoiding glob expansion issues
   while IFS= read -r subdir; do
-    local subdir_name="$(basename "${subdir}")"
-    echo "[DEBUG] Checking subdirectory: ${subdir_name}"
-    
     # Check if this directory contains .i files
     if find "${subdir}" -maxdepth 10 -name "*.i" -type f -print -quit 2>/dev/null | grep -q .; then
-      echo "[DEBUG] Found .i files in nested structure: ${subdir}"
       found_nested=true
       
-      # Move all .i files to the top level
-      find "${subdir}" -name "*.i" -type f 2>/dev/null | while IFS= read -r ifile; do
-        local fname="$(basename "${ifile}")"
-        echo "[DEBUG] Moving ${fname} from ${ifile} to ${outdir}/"
-        cp "${ifile}" "${outdir}/${fname}" 2>/dev/null || true
-      done
-      
-      # Move other generated files (hpp, cxx, h, cpp)
-      find "${subdir}" -type f \( -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) 2>/dev/null | while IFS= read -r cfile; do
-        local fname="$(basename "${cfile}")"
+      # Move all generated files to the top level (i, hpp, cxx, h, cpp, and TypeObjectSupport/PubSubTypes)
+      find "${subdir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) 2>/dev/null | while IFS= read -r gfile; do
+        local fname="$(basename "${gfile}")"
         if [[ ! -f "${outdir}/${fname}" ]]; then
-          echo "[DEBUG] Moving ${fname}"
-          cp "${cfile}" "${outdir}/${fname}" 2>/dev/null || true
+          cp "${gfile}" "${outdir}/${fname}" 2>/dev/null || true
         fi
       done
       
       # Clean up nested structure
-      echo "[DEBUG] Removing nested directory: ${subdir}"
       rm -rf "${subdir}"
       break
     fi
   done < <(find "${outdir}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
   
-  if [[ "${found_nested}" == "false" ]]; then
-    echo "[DEBUG] No nested structure found"
-  else
-    echo "[DEBUG] Successfully flattened nested structure"
-  fi
-  
   if [[ ! -f "${outdir}/${base}.i" ]]; then
     echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
     echo "[ERR]  Log contents:"
     cat "${outdir}/_gen.log" || true
-    echo "[DEBUG] Files generated in ${outdir}:"
+    echo "[ERR]  Files in ${outdir}:"
     ls -la "${outdir}" || true
-    echo "[DEBUG] Searching for .i files recursively:"
+    echo "[ERR]  Searching for .i files recursively:"
     find "${outdir}" -name "*.i" -type f || true
     echo "[FATAL] .i file generation failed, exiting immediately"
     exit 1
