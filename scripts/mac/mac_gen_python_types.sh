@@ -481,17 +481,11 @@ gen_one() {
     if find "${subdir}" -maxdepth 10 -name "*.i" -type f -print -quit 2>/dev/null | grep -q .; then
       found_nested=true
       
-      # Move all .i files to the top level
-      find "${subdir}" -name "*.i" -type f 2>/dev/null | while IFS= read -r ifile; do
-        local fname; fname="$(basename "${ifile}")"
-        cp "${ifile}" "${outdir}/${fname}" 2>/dev/null || true
-      done
-      
-      # Move other generated files (hpp, cxx, h, cpp)
-      find "${subdir}" -type f \( -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) 2>/dev/null | while IFS= read -r cfile; do
-        local fname; fname="$(basename "${cfile}")"
+      # Move all generated files to the top level (i, hpp, cxx, h, cpp, and TypeObjectSupport/PubSubTypes)
+      find "${subdir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) 2>/dev/null | while IFS= read -r gfile; do
+        local fname; fname="$(basename "${gfile}")"
         if [[ ! -f "${outdir}/${fname}" ]]; then
-          cp "${cfile}" "${outdir}/${fname}" 2>/dev/null || true
+          cp "${gfile}" "${outdir}/${fname}" 2>/dev/null || true
         fi
       done
       
