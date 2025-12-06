@@ -134,6 +134,18 @@ gen_one() {
     echo "[FATAL] fastddsgen command failed, exiting immediately"
     exit 1
   fi
+  
+  # fastddsgen v4.0.4+ recreates the full source path structure inside the output directory
+  # Move generated files from nested structure to the expected flat location
+  local nested_outdir="${outdir}/${GEN_SRC_ROOT}/${dir_rel}"
+  if [[ -d "${nested_outdir}" ]]; then
+    echo "[DEBUG] Flattening nested output from ${nested_outdir}"
+    # Move all generated files to the top level
+    find "${nested_outdir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*PubSubTypes.*" -o -name "*TypeObjectSupport.*" \) -exec mv {} "${outdir}/" \;
+    # Clean up nested structure
+    rm -rf "${outdir}/$(echo ${GEN_SRC_ROOT} | cut -d/ -f1)"
+  fi
+  
   if [[ ! -f "${outdir}/${base}.i" ]]; then
     echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
     echo "[ERR]  Log contents:"
