@@ -139,26 +139,39 @@ gen_one() {
   # Move generated files from nested structure to the expected flat location
   echo "[DEBUG] Checking for nested structure in ${outdir}"
   echo "[DEBUG] GEN_SRC_ROOT=${GEN_SRC_ROOT}"
-  echo "[DEBUG] Looking for nested path: ${outdir}/${GEN_SRC_ROOT}/${dir_rel}"
   
-  # Find the actual nested directory (fastddsgen creates the full absolute path as subdirs)
-  local nested_base="$(basename "${GEN_SRC_ROOT}")"
-  local nested_search="${outdir}/${nested_base}"
-  echo "[DEBUG] Searching for nested base: ${nested_search}"
+  # fastddsgen creates subdirectories matching parts of the absolute path
+  # Look for any subdirectory that contains .i files and move them up
+  local found_nested=false
+  for subdir in "${outdir}"/*/ ; do
+    if [[ -d "${subdir}" && "$(basename "${subdir}")" != "." && "$(basename "${subdir}")" != ".." ]]; then
+      local subdir_name="$(basename "${subdir}")"
+      echo "[DEBUG] Checking subdirectory: ${subdir_name}"
+      if find "${subdir}" -name "*.i" -type f -print -quit | grep -q .; then
+        echo "[DEBUG] Found .i files in nested structure: ${subdir}"
+        found_nested=true
+        # Move all generated files to the top level
+        find "${subdir}" -name "*.i" -type f | while IFS= read -r ifile; do
+          local fname="$(basename "${ifile}")"
+          echo "[DEBUG] Moving ${fname} to ${outdir}/"
+          mv "${ifile}" "${outdir}/" 2>/dev/null || true
+        done
+        # Move other generated files
+        find "${subdir}" -type f \( -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) | while IFS= read -r cfile; do
+          local fname="$(basename "${cfile}")"
+          if [[ ! -f "${outdir}/${fname}" ]]; then
+            mv "${cfile}" "${outdir}/" 2>/dev/null || true
+          fi
+        done
+        # Clean up nested structure
+        rm -rf "${subdir}"
+        echo "[DEBUG] Cleaned up nested structure: ${subdir}"
+        break
+      fi
+    fi
+  done
   
-  if [[ -d "${nested_search}" ]]; then
-    echo "[DEBUG] Found nested structure, flattening..."
-    # Find all .i files and move them to the top level
-    find "${outdir}" -name "*.i" -type f | while read -r ifile; do
-      echo "[DEBUG] Moving ${ifile} to ${outdir}/"
-      mv "${ifile}" "${outdir}/" || true
-    done
-    # Move other generated files
-    find "${outdir}" -type f \( -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*PubSubTypes.*" -o -name "*TypeObjectSupport.*" \) ! -path "${outdir}/*" -exec mv {} "${outdir}/" \; 2>/dev/null || true
-    # Clean up nested structure
-    rm -rf "${nested_search}"
-    echo "[DEBUG] Nested structure cleaned up"
-  else
+  if [[ "${found_nested}" == "false" ]]; then
     echo "[DEBUG] No nested structure found"
   fi
   
