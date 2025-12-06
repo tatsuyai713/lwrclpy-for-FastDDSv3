@@ -50,6 +50,8 @@ jobs:
     
     - name: Generate Python types
       run: |
+        export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
+        export FASTDDSGEN_BIN="/opt/fast-dds-gen-v3/bin/fastddsgen"
         bash scripts/gen_python_types.sh
     
     - name: Build wheel
