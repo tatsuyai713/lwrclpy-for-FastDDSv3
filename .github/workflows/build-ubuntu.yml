@@ -60,7 +60,20 @@ jobs:
         export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
         which fastddsgen || echo "fastddsgen not found in PATH"
         fastddsgen -version || echo "fastddsgen -version failed"
-        fastddsgen -help || echo "fastddsgen -help failed"
+        
+    - name: Test fastddsgen output structure
+      run: |
+        export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
+        mkdir -p /tmp/fastdds_test/out
+        echo "module test { struct TestMsg { long x; }; };" > /tmp/fastdds_test/Test.idl
+        /opt/fast-dds-gen-v3/bin/fastddsgen -python -cs -typeros2 -language c++ \
+          -d /tmp/fastdds_test/out \
+          -I /tmp/fastdds_test \
+          -replace /tmp/fastdds_test/Test.idl || echo "fastddsgen failed"
+        echo "=== Generated files ==="
+        find /tmp/fastdds_test/out -type f
+        echo "=== Directory structure ==="
+        find /tmp/fastdds_test/out -type d
     
     - name: Generate Python types
       run: |
