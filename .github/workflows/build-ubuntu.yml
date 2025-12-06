@@ -67,6 +67,7 @@ jobs:
         source build_venv/bin/activate
         export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
         export FASTDDSGEN_BIN="/opt/fast-dds-gen-v3/bin/fastddsgen"
+        export PREFIX_V3="/opt/fast-dds-v3"
         bash scripts/gen_python_types.sh
     
     - name: Build wheel
