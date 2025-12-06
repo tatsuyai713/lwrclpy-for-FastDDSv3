@@ -48,6 +48,10 @@ jobs:
       run: |
         bash scripts/install_fastdds_v3_colcon.sh
     
+    - name: Generate Python types
+      run: |
+        bash scripts/gen_python_types.sh
+    
     - name: Build wheel
       run: |
         python -m pip install --upgrade pip wheel setuptools

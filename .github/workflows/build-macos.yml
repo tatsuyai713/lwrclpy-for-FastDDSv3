@@ -45,6 +45,10 @@ jobs:
         sudo chown -R $(whoami) /opt
         bash scripts/mac/mac_install_fastdds_v3_colcon.sh
     
+    - name: Generate Python types
+      run: |
+        bash scripts/mac/mac_gen_python_types.sh
+    
     - name: Build wheel
       run: |
         python -m pip install --upgrade pip wheel setuptools
