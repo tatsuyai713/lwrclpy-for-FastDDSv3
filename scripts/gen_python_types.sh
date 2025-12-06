@@ -123,6 +123,7 @@ gen_one() {
   mkdir -p "${outdir}"
 
   echo "[GEN] ${rel} -> ${outdir}"
+  echo "[DEBUG] Running: ${FASTDDSGEN_BIN} -python -cs -typeros2 -language c++ -d ${outdir} -I ${GEN_SRC_ROOT} -replace ${idl_path}"
   # -cs: generate TypeObject support; -typeros2: ROS2-friendly types; -language c++
   if ! "${FASTDDSGEN_BIN}" -python -cs -typeros2 -language c++ \
         -d "${outdir}" \
@@ -137,6 +138,10 @@ gen_one() {
     echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
     echo "[ERR]  Log contents:"
     cat "${outdir}/_gen.log" || true
+    echo "[DEBUG] Files generated in ${outdir}:"
+    ls -la "${outdir}" || true
+    echo "[DEBUG] Searching for .i files recursively:"
+    find "${outdir}" -name "*.i" -type f || true
     echo "[FATAL] .i file generation failed, exiting immediately"
     exit 1
   fi
