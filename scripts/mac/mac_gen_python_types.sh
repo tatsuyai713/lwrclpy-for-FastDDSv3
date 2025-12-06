@@ -466,42 +466,11 @@ gen_one() {
         -d "${outdir}" -I "${GEN_SRC_ROOT}" -replace "${idl_path}" \
         > "${outdir}/_gen.log" 2>&1; then
     echo "[ERR]  fastddsgen failed: ${rel} (see ${outdir}/_gen.log)"
-    cat "${outdir}/_gen.log" || true
-    echo "[FATAL] fastddsgen command failed, exiting immediately"
-    exit 1
+    sed -n '1,160p' "${outdir}/_gen.log" || true
+    FAILED_GEN+=("${rel}")
+    return
   fi
-  
-  # fastddsgen v4.0.4+ recreates the full source path structure inside the output directory
-  # Move generated files from nested structure to the expected flat location
-  local found_nested; found_nested=false
-  
-  # Use find to get all directories, avoiding glob expansion issues
-  while IFS= read -r subdir; do
-    # Check if this directory contains .i files
-    if find "${subdir}" -maxdepth 10 -name "*.i" -type f -print -quit 2>/dev/null | grep -q .; then
-      found_nested=true
-      
-      # Move all generated files to the top level (i, hpp, cxx, h, cpp, and TypeObjectSupport/PubSubTypes)
-      find "${subdir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" \) 2>/dev/null | while IFS= read -r gfile; do
-        local fname; fname="$(basename "${gfile}")"
-        if [[ ! -f "${outdir}/${fname}" ]]; then
-          cp "${gfile}" "${outdir}/${fname}" 2>/dev/null || true
-        fi
-      done
-      
-      # Clean up nested structure
-      rm -rf "${subdir}"
-      break
-    fi
-  done < <(find "${outdir}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
-  
-  if [[ ! -f "${outdir}/${base}.i" ]]; then
-    echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
-    echo "[ERR]  Log contents:"
-    cat "${outdir}/_gen.log" || true
-    echo "[FATAL] .i file generation failed, exiting immediately"
-    exit 1
-  fi
+  [[ -f "${outdir}/${base}.i" ]] || { echo "[ERR]  ${base}.i not generated"; FAILED_GEN+=("${rel}"); return; }
 
   normalize_tree_py "${outdir}"
 
