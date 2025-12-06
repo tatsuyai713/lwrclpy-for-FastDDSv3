@@ -48,6 +48,13 @@ jobs:
       run: |
         bash scripts/install_fastdds_v3_colcon.sh
     
+    - name: Verify fastddsgen installation
+      run: |
+        export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
+        which fastddsgen || echo "fastddsgen not found in PATH"
+        fastddsgen -version || echo "fastddsgen -version failed"
+        fastddsgen -help || echo "fastddsgen -help failed"
+    
     - name: Generate Python types
       run: |
         export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
