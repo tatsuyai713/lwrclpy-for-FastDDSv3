@@ -42,6 +42,13 @@ need java
 [[ -d "${ROS_TYPES_ROOT}/src" ]] || { echo "[FATAL] ROS_TYPES_ROOT/src not found: ${ROS_TYPES_ROOT}/src"; exit 1; }
 [[ -f "${PATCH_PY}" ]] || { echo "[FATAL] patch script missing: ${PATCH_PY}"; exit 1; }
 
+# Debug info
+echo "[DEBUG] fastddsgen: ${FASTDDSGEN_BIN}"
+echo "[DEBUG] swig version: $(swig -version | head -2)"
+echo "[DEBUG] java version: $(java -version 2>&1 | head -1)"
+"${FASTDDSGEN_BIN}" -version || echo "[WARN] fastddsgen -version failed"
+"${FASTDDSGEN_BIN}" -help 2>&1 | grep -i python || echo "[WARN] fastddsgen may not support -python"
+
 mkdir -p "${BUILD_ROOT}" "${GEN_SRC_ROOT}" "${INC_STAGE_ROOT}"
 
 # ===== Auto-detect CMake package dirs for fastdds / fastcdr =====
@@ -121,12 +128,18 @@ gen_one() {
         -d "${outdir}" \
         -I "${GEN_SRC_ROOT}" \
         -replace "${idl_path}" > "${outdir}/_gen.log" 2>&1; then
-    echo "[ERR]  fastddsgen failed: ${rel} (see ${outdir}/_gen.log head)"
-    sed -n '1,120p' "${outdir}/_gen.log" || true
-    FAILED_GEN+=("${rel}")
-    return
+    echo "[ERR]  fastddsgen failed: ${rel} (see ${outdir}/_gen.log)"
+    cat "${outdir}/_gen.log" || true
+    echo "[FATAL] fastddsgen command failed, exiting immediately"
+    exit 1
   fi
-  [[ -f "${outdir}/${base}.i" ]] || { echo "[ERR]  ${base}.i not generated"; FAILED_GEN+=("${rel}"); return; }
+  if [[ ! -f "${outdir}/${base}.i" ]]; then
+    echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
+    echo "[ERR]  Log contents:"
+    cat "${outdir}/_gen.log" || true
+    echo "[FATAL] .i file generation failed, exiting immediately"
+    exit 1
+  fi
 
   echo "[PATCH.i] ${rel}"
   python3 "${PATCH_PY}" "${outdir}/${base}.i"

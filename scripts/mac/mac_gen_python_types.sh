@@ -466,11 +466,17 @@ gen_one() {
         -d "${outdir}" -I "${GEN_SRC_ROOT}" -replace "${idl_path}" \
         > "${outdir}/_gen.log" 2>&1; then
     echo "[ERR]  fastddsgen failed: ${rel} (see ${outdir}/_gen.log)"
-    sed -n '1,160p' "${outdir}/_gen.log" || true
-    FAILED_GEN+=("${rel}")
-    return
+    cat "${outdir}/_gen.log" || true
+    echo "[FATAL] fastddsgen command failed, exiting immediately"
+    exit 1
   fi
-  [[ -f "${outdir}/${base}.i" ]] || { echo "[ERR]  ${base}.i not generated"; FAILED_GEN+=("${rel}"); return; }
+  if [[ ! -f "${outdir}/${base}.i" ]]; then
+    echo "[ERR]  ${base}.i not generated (fastddsgen succeeded but no .i file)"
+    echo "[ERR]  Log contents:"
+    cat "${outdir}/_gen.log" || true
+    echo "[FATAL] .i file generation failed, exiting immediately"
+    exit 1
+  fi
 
   normalize_tree_py "${outdir}"
 
