@@ -137,13 +137,29 @@ gen_one() {
   
   # fastddsgen v4.0.4+ recreates the full source path structure inside the output directory
   # Move generated files from nested structure to the expected flat location
-  local nested_outdir="${outdir}/${GEN_SRC_ROOT}/${dir_rel}"
-  if [[ -d "${nested_outdir}" ]]; then
-    echo "[DEBUG] Flattening nested output from ${nested_outdir}"
-    # Move all generated files to the top level
-    find "${nested_outdir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*PubSubTypes.*" -o -name "*TypeObjectSupport.*" \) -exec mv {} "${outdir}/" \;
+  echo "[DEBUG] Checking for nested structure in ${outdir}"
+  echo "[DEBUG] GEN_SRC_ROOT=${GEN_SRC_ROOT}"
+  echo "[DEBUG] Looking for nested path: ${outdir}/${GEN_SRC_ROOT}/${dir_rel}"
+  
+  # Find the actual nested directory (fastddsgen creates the full absolute path as subdirs)
+  local nested_base="$(basename "${GEN_SRC_ROOT}")"
+  local nested_search="${outdir}/${nested_base}"
+  echo "[DEBUG] Searching for nested base: ${nested_search}"
+  
+  if [[ -d "${nested_search}" ]]; then
+    echo "[DEBUG] Found nested structure, flattening..."
+    # Find all .i files and move them to the top level
+    find "${outdir}" -name "*.i" -type f | while read -r ifile; do
+      echo "[DEBUG] Moving ${ifile} to ${outdir}/"
+      mv "${ifile}" "${outdir}/" || true
+    done
+    # Move other generated files
+    find "${outdir}" -type f \( -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*PubSubTypes.*" -o -name "*TypeObjectSupport.*" \) ! -path "${outdir}/*" -exec mv {} "${outdir}/" \; 2>/dev/null || true
     # Clean up nested structure
-    rm -rf "${outdir}/$(echo ${GEN_SRC_ROOT} | cut -d/ -f1)"
+    rm -rf "${nested_search}"
+    echo "[DEBUG] Nested structure cleaned up"
+  else
+    echo "[DEBUG] No nested structure found"
   fi
   
   if [[ ! -f "${outdir}/${base}.i" ]]; then
