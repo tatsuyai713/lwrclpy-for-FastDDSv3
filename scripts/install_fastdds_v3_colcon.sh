@@ -85,9 +85,13 @@ GEN_SRC_DIR="$(find "${WS}/src" -maxdepth 2 -type d \( -iname 'fastddsgen' -o -i
 [[ -n "${GEN_SRC_DIR}" ]] || die "Fast-DDS-Gen repo not found under ${WS}/src (check your repos file)"
 log "Building fastddsgen from: ${GEN_SRC_DIR}"
 
+# Ensure Java 11 is used for Gradle
+export JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
+log "Using JAVA_HOME=${JAVA_HOME}"
+
 pushd "${GEN_SRC_DIR}" >/dev/null
   ./gradlew --no-daemon clean assemble
-  sudo ./gradlew --no-daemon install --install_path="${GEN_PREFIX}"
+  sudo JAVA_HOME="${JAVA_HOME}" ./gradlew --no-daemon install --install_path="${GEN_PREFIX}"
 popd >/dev/null
 
 # Make fastddsgen available in PATH for this shell
