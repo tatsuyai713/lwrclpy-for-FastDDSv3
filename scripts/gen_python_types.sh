@@ -135,7 +135,7 @@ gen_one() {
     if [[ -n "${found_i}" ]]; then
       nested_dir="$(dirname "${found_i}")"
       echo "[INFO] Flattening nested structure from ${nested_dir}"
-      find "${nested_dir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" -o -name "*.ipp" \) -exec mv -f {} "${outdir}/" \;
+      find "${nested_dir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" -o -name "*.ipp" -o -name "CMakeLists.txt" \) -exec mv -f {} "${outdir}/" \;
       # Clean up empty nested directories
       find "${outdir}" -type d -empty -delete 2>/dev/null || true
     fi
