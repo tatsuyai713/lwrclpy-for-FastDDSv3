@@ -126,6 +126,21 @@ gen_one() {
     FAILED_GEN+=("${rel}")
     return
   fi
+  
+  # fastddsgen v4.0.4 with -replace may create nested directory structure
+  # Flatten it: move all generated files to top level
+  if [[ ! -f "${outdir}/${base}.i" ]]; then
+    # Look for .i file in nested structure
+    found_i="$(find "${outdir}" -name "${base}.i" -type f | head -1)"
+    if [[ -n "${found_i}" ]]; then
+      nested_dir="$(dirname "${found_i}")"
+      echo "[INFO] Flattening nested structure from ${nested_dir}"
+      find "${nested_dir}" -type f \( -name "*.i" -o -name "*.hpp" -o -name "*.cxx" -o -name "*.h" -o -name "*.cpp" -o -name "*.ipp" \) -exec mv -f {} "${outdir}/" \;
+      # Clean up empty nested directories
+      find "${outdir}" -type d -empty -delete 2>/dev/null || true
+    fi
+  fi
+  
   [[ -f "${outdir}/${base}.i" ]] || { echo "[ERR]  ${base}.i not generated"; FAILED_GEN+=("${rel}"); return; }
 
   echo "[PATCH.i] ${rel}"
