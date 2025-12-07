@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -13,3 +13,11 @@ jobs:
   
   build-macos-wheels:
     uses: ./.github/workflows/build-macos.yml
+  
+  test-ubuntu-wheels:
+    needs: build-ubuntu-wheels
+    uses: ./.github/workflows/test-ubuntu.yml
+  
+  test-macos-wheels:
+    needs: build-macos-wheels
+    uses: ./.github/workflows/test-macos.yml

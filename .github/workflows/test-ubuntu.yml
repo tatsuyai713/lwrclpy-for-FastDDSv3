@@ -1,27 +1,17 @@
-name: Test Ubuntu with Wheel
+name: Test Ubuntu Wheels
 
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      wheel-artifact:
-        description: 'Wheel artifact name to test'
-        required: false
-        type: string
 
 jobs:
   test:
-    name: Test Ubuntu ${{ matrix.ubuntu-version }} Python ${{ matrix.python-version }}
-    runs-on: ubuntu-${{ matrix.ubuntu-version }}
+    name: Test Ubuntu Python ${{ matrix.python-version }}
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        ubuntu-version: ['20.04', '22.04']
         python-version: ['3.8', '3.9', '3.10', '3.11']
-        exclude:
-          # Ubuntu 20.04 doesn't have Python 3.11 by default
-          - ubuntu-version: '20.04'
-            python-version: '3.11'
     
     steps:
     - name: Checkout code
@@ -35,10 +25,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Download wheel artifact
-      if: inputs.wheel-artifact != ''
       uses: actions/download-artifact@v4
       with:
-        name: ${{ inputs.wheel-artifact }}
+        name: wheel-ubuntu-py${{ matrix.python-version }}
         path: dist/
     
     - name: Install wheel
@@ -46,13 +35,9 @@ jobs:
         python -m venv test_venv
         source test_venv/bin/activate
         pip install --upgrade pip
-        if [ -f dist/*.whl ]; then
-          pip install dist/*.whl
-        else
-          echo "No wheel found, skipping installation"
-        fi
+        pip install dist/*.whl
     
     - name: Run tests
       run: |
         source test_venv/bin/activate
-        python3 test/test_examples_ubuntu.py
+        python test/test_examples_ubuntu.py
