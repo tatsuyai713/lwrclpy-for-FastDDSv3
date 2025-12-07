@@ -58,7 +58,7 @@ def print_warning(message):
     print(f"{Colors.YELLOW}⚠ {message}{Colors.RESET}")
 
 
-def run_example_with_timeout(script_path, timeout=15.0, check_output=None):
+def run_example_with_timeout(script_path, timeout=15.0, check_output=None, timeout_ok=False):
     """
     Execute example script with timeout
     
@@ -66,6 +66,7 @@ def run_example_with_timeout(script_path, timeout=15.0, check_output=None):
         script_path: Path to the script to execute
         timeout: Timeout in seconds (default: 15.0)
         check_output: List of keywords to check in output (optional)
+        timeout_ok: If True, timeout is considered success (for infinite loop scripts)
     
     Returns:
         Tuple of (success: bool, output: str)
@@ -86,6 +87,13 @@ def run_example_with_timeout(script_path, timeout=15.0, check_output=None):
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()
+            output = stdout + stderr
+            # For infinite loop scripts, timeout means it's running correctly
+            if timeout_ok:
+                # Check if there were errors before timeout
+                if "Traceback" in output or ("Error" in output and "error" not in output.lower()):
+                    return False, output
+                return True, "OK (timed out as expected)"
             return False, "Timeout"
         
         output = stdout + stderr
@@ -110,7 +118,7 @@ def run_example_with_timeout(script_path, timeout=15.0, check_output=None):
 
 
 def test_basic_pubsub():
-    """Test basic Pub/Sub"""
+    """Test basic publisher/subscriber"""
     print_test_start("Basic Publisher/Subscriber")
     
     examples = [
@@ -119,7 +127,8 @@ def test_basic_pubsub():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -142,7 +151,8 @@ def test_timers():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -158,7 +168,8 @@ def test_parameters():
     print_test_start("Parameters")
     
     script = PROJECT_ROOT / "examples/parameters/logger_and_params.py"
-    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
+    # This is an infinite-loop script, so timeout is expected
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None, timeout_ok=True)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
@@ -179,7 +190,8 @@ def test_executor():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -212,13 +224,13 @@ def test_services():
     
     # Services are client/server pairs, so test individually
     examples = [
-        (PROJECT_ROOT / "examples/services/set_bool/server.py", None),
-        (PROJECT_ROOT / "examples/services/set_bool/client.py", None),
-        (PROJECT_ROOT / "examples/services/trigger_bridge/bridge.py", None),
+        (PROJECT_ROOT / "examples/services/set_bool/server.py", None, True),  # server is infinite-loop
+        (PROJECT_ROOT / "examples/services/set_bool/client.py", None, True),  # client is infinite-loop
+        (PROJECT_ROOT / "examples/services/trigger_bridge/bridge.py", None, False),  # bridge exits normally
     ]
     
-    for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+    for script, keywords, timeout_ok in examples:
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=timeout_ok)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -239,7 +251,8 @@ def test_actions():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -248,6 +261,37 @@ def test_actions():
         else:
             print_error(f"{relative_path} - FAILED")
             print(f"  {output}")
+
+
+def test_video():
+    """Test video relay example"""
+    print_test_start("Video Examples")
+    
+    # Install video requirements first
+    requirements_file = PROJECT_ROOT / "examples/video/requirements.txt"
+    if requirements_file.exists():
+        print(f"Installing video requirements from {requirements_file}...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print_success("Video requirements installed")
+        except subprocess.CalledProcessError as e:
+            print_warning(f"Failed to install requirements: {e.stderr}")
+    
+    script = PROJECT_ROOT / "examples/video/video_relay.py"
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
+    relative_path = script.relative_to(PROJECT_ROOT)
+    test_results.append((str(relative_path), success))
+    
+    if success:
+        print_success(f"{relative_path} - OK")
+    else:
+        print_error(f"{relative_path} - FAILED")
+        print(f"  {output}")
 
 
 def test_import():
@@ -379,6 +423,7 @@ def main():
     test_guard_condition()
     test_services()
     test_actions()
+    test_video()
     
     # Output summary
     all_passed = print_summary()

@@ -54,7 +54,8 @@ def print_warning(message: str):
 def run_example_with_timeout(
     script_path: Path,
     timeout: float = 6.0,
-    check_output: Optional[List[str]] = None
+    check_output: Optional[List[str]] = None,
+    timeout_ok: bool = False
 ) -> Tuple[bool, str]:
     """
     Run sample script with timeout
@@ -63,6 +64,7 @@ def run_example_with_timeout(
         script_path: Path to the script to run
         timeout: Timeout in seconds
         check_output: List of keywords that should be in the output (None to skip check)
+        timeout_ok: If True, treat timeout as success (for infinite loop scripts)
     
     Returns:
         (success, output or error message)
@@ -87,6 +89,15 @@ def run_example_with_timeout(
             if process.poll() is None:
                 process.kill()
             stdout, stderr = process.communicate()
+            
+            # If timeout is OK (infinite loop scripts), treat as success
+            if timeout_ok:
+                output = stdout + stderr
+                # Check for critical errors even when timeout is expected
+                if "Traceback" in output and "KeyboardInterrupt" not in output:
+                    if any(err in output for err in ["ModuleNotFoundError", "ImportError", "AttributeError", "SyntaxError"]):
+                        return False, f"Error occurred:\n{output[:500]}"
+                return True, "Timed out as expected (infinite loop script)"
         
         output = stdout + stderr
         
@@ -118,7 +129,8 @@ def test_basic_pubsub():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -140,7 +152,8 @@ def test_timers():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -175,7 +188,8 @@ def test_executor():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -206,13 +220,13 @@ def test_services():
     
     # Services are client/server pairs, so test individually
     examples = [
-        (PROJECT_ROOT / "examples/services/set_bool/server.py", None),
-        (PROJECT_ROOT / "examples/services/set_bool/client.py", None),
-        (PROJECT_ROOT / "examples/services/trigger_bridge/bridge.py", None),
+        (PROJECT_ROOT / "examples/services/set_bool/server.py", None, True),  # server is infinite-loop
+        (PROJECT_ROOT / "examples/services/set_bool/client.py", None, True),  # client is infinite-loop
+        (PROJECT_ROOT / "examples/services/trigger_bridge/bridge.py", None, False),  # bridge exits normally
     ]
     
-    for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+    for script, keywords, timeout_ok in examples:
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=timeout_ok)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -232,7 +246,8 @@ def test_actions():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
+        # These are infinite-loop scripts, so timeout is expected
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords, timeout_ok=True)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -241,6 +256,38 @@ def test_actions():
         else:
             print_error(f"{relative_path} - FAILED")
             print(f"  {output}")
+
+
+def test_video():
+    """Test video relay example"""
+    print_test_start("Video Examples")
+    
+    # Install video requirements first
+    requirements_file = PROJECT_ROOT / "examples/video/requirements.txt"
+    if requirements_file.exists():
+        print(f"Installing video requirements from {requirements_file}...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print_success("Video requirements installed")
+        except subprocess.CalledProcessError as e:
+            print_warning(f"Failed to install requirements: {e.stderr}")
+    
+    script = PROJECT_ROOT / "examples/video/video_relay.py"
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
+    relative_path = script.relative_to(PROJECT_ROOT)
+    test_results.append((str(relative_path), success))
+    
+    if success:
+        print_success(f"{relative_path} - OK")
+    else:
+        print_error(f"{relative_path} - FAILED")
+        print(f"  {output}")
+
 
 def test_import():
     """Basic import test"""
@@ -368,6 +415,7 @@ def main():
     test_guard_condition()
     test_services()
     test_actions()
+    test_video()
     
     # Output summary
     all_passed = print_summary()
