@@ -36,7 +36,8 @@ jobs:
         source test_venv/bin/activate
         pip install --upgrade pip
         # Install only the wheel matching current Python version and platform
-        pip install dist/*cp${{ matrix.python-version | replace('.', '') }}*linux*.whl
+        PYVER=$(python -c 'import sys; print("".join(map(str, sys.version_info[:2])))')
+        pip install dist/*cp${PYVER}*linux*.whl
     
     - name: Run tests
       run: |
