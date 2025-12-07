@@ -86,7 +86,28 @@ install_one(){
   ensure_init "${dst_pkg}"                                # e.g., std_msgs/msg
 
   log "[INST] ${pkg_dir}/${name}"
-  install -m 0644 "${py_src}" "${dst_pkg}/${name}.py"
+  
+  # Patch Python file to preload lib*.so before importing wrapper
+  if [[ -n "${so_core}" ]]; then
+    local tmp_py="${dst_pkg}/.${name}.py.tmp"
+    {
+      echo "# Auto-generated preload for lib${name}.so"
+      echo "import os, ctypes"
+      echo "_lib_path = os.path.join(os.path.dirname(__file__), 'lib${name}.so')"
+      echo "if os.path.exists(_lib_path):"
+      echo "    try:"
+      echo "        ctypes.CDLL(_lib_path, mode=getattr(ctypes, 'RTLD_GLOBAL', os.RTLD_GLOBAL))"
+      echo "    except Exception:"
+      echo "        pass"
+      echo ""
+      cat "${py_src}"
+    } > "${tmp_py}"
+    install -m 0644 "${tmp_py}" "${dst_pkg}/${name}.py"
+    rm -f "${tmp_py}"
+  else
+    install -m 0644 "${py_src}" "${dst_pkg}/${name}.py"
+  fi
+  
   install -m 0755 "${so_wrapper}" "${dst_pkg}/$(basename "${so_wrapper}")"
   [[ -n "${so_core}" ]] && install -m 0755 "${so_core}" "${dst_pkg}/lib${name}.so"
 

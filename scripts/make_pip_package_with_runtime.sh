@@ -224,6 +224,8 @@ def _preload_libs(d):
 
 def _preload_ros_msg_libs():
     base = os.path.dirname(_pkg_dir)
+    # Collect all lib*.so files first
+    libs = []
     seen = set()
     for dp, _dn, files in sorted(os.walk(base), key=lambda item: item[0]):
         for f in sorted(files):
@@ -234,11 +236,21 @@ def _preload_ros_msg_libs():
             if f in seen:
                 continue
             seen.add(f)
-            fp = os.path.join(dp, f)
+            libs.append(os.path.join(dp, f))
+    
+    # Try to load all libraries, retry failed ones multiple times
+    # to handle dependencies (simple dependency resolution)
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        failed = []
+        for fp in libs:
             try:
                 ctypes.CDLL(fp, mode=getattr(ctypes, "RTLD_GLOBAL", os.RTLD_GLOBAL))
             except Exception:
-                pass
+                failed.append(fp)
+        if not failed:
+            break
+        libs = failed  # Retry only failed libraries
 
 def ensure_fastdds():
     _prune_opt_paths()
