@@ -283,7 +283,8 @@ def test_video():
             print_warning(f"Failed to install requirements: {e.stderr}")
     
     script = PROJECT_ROOT / "examples/video/video_relay.py"
-    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
+    # video_relay uses rclpy.spin() so it's an infinite-loop script
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None, timeout_ok=True)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
