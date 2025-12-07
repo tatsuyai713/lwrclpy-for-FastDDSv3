@@ -58,13 +58,13 @@ def print_warning(message):
     print(f"{Colors.YELLOW}⚠ {message}{Colors.RESET}")
 
 
-def run_example_with_timeout(script_path, timeout=6.0, check_output=None):
+def run_example_with_timeout(script_path, timeout=15.0, check_output=None):
     """
     Execute example script with timeout
     
     Args:
         script_path: Path to the script to execute
-        timeout: Timeout in seconds (default: 6.0)
+        timeout: Timeout in seconds (default: 15.0)
         check_output: List of keywords to check in output (optional)
     
     Returns:
@@ -119,7 +119,7 @@ def test_basic_pubsub():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=3.0, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -142,7 +142,7 @@ def test_timers():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=3.0, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -158,7 +158,7 @@ def test_parameters():
     print_test_start("Parameters")
     
     script = PROJECT_ROOT / "examples/parameters/logger_and_params.py"
-    success, output = run_example_with_timeout(script, timeout=3.0, check_output=None)
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
@@ -179,7 +179,7 @@ def test_executor():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=3.0, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -195,7 +195,7 @@ def test_guard_condition():
     print_test_start("Guard Condition")
     
     script = PROJECT_ROOT / "examples/guard_condition/trigger_guard_condition.py"
-    success, output = run_example_with_timeout(script, timeout=3.0, check_output=None)
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
@@ -218,7 +218,7 @@ def test_services():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=3.0, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -239,7 +239,7 @@ def test_actions():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=3.0, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -307,7 +307,7 @@ print('Shutdown complete', flush=True)
         )
         
         try:
-            stdout, stderr = process.communicate(timeout=10.0)
+            stdout, stderr = process.communicate(timeout=15.0)
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()

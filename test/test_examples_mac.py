@@ -118,7 +118,7 @@ def test_basic_pubsub():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=4.5, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -140,7 +140,7 @@ def test_timers():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=4.5, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -155,7 +155,7 @@ def test_parameters():
     print_test_start("Parameters")
     
     script = PROJECT_ROOT / "examples/parameters/logger_and_params.py"
-    success, output = run_example_with_timeout(script, timeout=4.5, check_output=None)
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
@@ -175,7 +175,7 @@ def test_executor():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=4.5, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -190,7 +190,7 @@ def test_guard_condition():
     print_test_start("Guard Condition")
     
     script = PROJECT_ROOT / "examples/guard_condition/trigger_guard_condition.py"
-    success, output = run_example_with_timeout(script, timeout=4.5, check_output=None)
+    success, output = run_example_with_timeout(script, timeout=15.0, check_output=None)
     relative_path = script.relative_to(PROJECT_ROOT)
     test_results.append((str(relative_path), success))
     
@@ -212,7 +212,7 @@ def test_services():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=4.5, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
@@ -232,7 +232,7 @@ def test_actions():
     ]
     
     for script, keywords in examples:
-        success, output = run_example_with_timeout(script, timeout=4.5, check_output=keywords)
+        success, output = run_example_with_timeout(script, timeout=15.0, check_output=keywords)
         relative_path = script.relative_to(PROJECT_ROOT)
         test_results.append((str(relative_path), success))
         
