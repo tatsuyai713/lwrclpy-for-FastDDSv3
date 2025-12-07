@@ -35,7 +35,8 @@ jobs:
         python -m venv test_venv
         source test_venv/bin/activate
         pip install --upgrade pip
-        pip install dist/*.whl
+        # Install only the wheel matching current Python version and platform
+        pip install dist/*cp${{ matrix.python-version | replace('.', '') }}*linux*.whl
     
     - name: Run tests
       run: |
