@@ -6,8 +6,6 @@
 [![Build Ubuntu](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-ubuntu.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-ubuntu.yml)
 [![Build macOS](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-macos.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/build-macos.yml)
 
-## Mac version is under development
-
 **lwrclpy** is an rclpy-compatible Python library built directly on Fast DDS v3. It ships ROS-like APIs (`Node`, `QoS`, `publisher`, `subscription`, `spin`) without ROS 2 distro/ABI constraints. Message fields can be set with ROS 2–style setters (`msg.data("hi")`) or plain attributes (`msg.data = "hi"`); lwrclpy clones messages on publish/receive so both styles work.
 
 > ✅ **Now tested end-to-end on macOS Sonoma (Apple Silicon)** — full Fast DDS v3 toolchain, ROS DataTypes generation, and packaged wheels are available via the scripts under `scripts/mac/`. Linux (Ubuntu) instructions remain unchanged.
