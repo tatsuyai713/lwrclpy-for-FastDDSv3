@@ -60,9 +60,12 @@ jobs:
         export CMAKE_PREFIX_PATH="/opt/fast-dds-v3:${CMAKE_PREFIX_PATH:-}"
         export LD_LIBRARY_PATH="/opt/fast-dds-v3/lib:/opt/fast-dds-v3/lib64:${LD_LIBRARY_PATH:-}"
         export PYTHONPATH="/opt/fast-dds-v3/lib/python$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:${PYTHONPATH:-}"
-        cd scripts
-        bash gen_python_types.sh
-        bash make_pip_package_with_runtime.sh
+        cd scripts && bash gen_python_types.sh
+    
+    - name: Build wheel
+      run: |
+        source build_venv/bin/activate
+        bash scripts/make_pip_package_with_runtime.sh
     
     - name: Upload wheel
       uses: actions/upload-artifact@v4
