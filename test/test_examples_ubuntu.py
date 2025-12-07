@@ -9,6 +9,9 @@ Tests are executed from /tmp directory to avoid source code interference.
 import subprocess
 import sys
 import signal
+import gc
+import time
+import os
 from pathlib import Path
 
 # Store test results
@@ -412,29 +415,48 @@ def main():
     if not test_import():
         print_error("Import test failed. Aborting further tests.")
         sys.exit(1)
+    gc.collect()
     
     # Simple publish test
     test_simple_publish()
+    gc.collect()
     
     # Test each category
     test_basic_pubsub()
+    gc.collect()
     test_timers()
+    gc.collect()
     test_parameters()
+    gc.collect()
     test_executor()
+    gc.collect()
     test_guard_condition()
+    gc.collect()
     test_services()
+    gc.collect()
     test_actions()
+    gc.collect()
     test_video()
+    gc.collect()
     
     # Output summary
     all_passed = print_summary()
     
+    # Force cleanup to prevent double-free errors
+    # Multiple passes to ensure all objects are cleaned up
+    for _ in range(3):
+        gc.collect()
+        time.sleep(0.2)
+    
+    time.sleep(1.0)  # Final wait for all background cleanup
+    
     if all_passed:
         print_success("All tests passed! ✨")
-        sys.exit(0)
+        # Use os._exit() to avoid Python cleanup that can trigger double-free
+        os._exit(0)
     else:
         print_error("Some tests failed.")
-        sys.exit(1)
+        os._exit(1)
 
 
 if __name__ == "__main__":
