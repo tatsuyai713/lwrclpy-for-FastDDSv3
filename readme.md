@@ -1,4 +1,4 @@
-# lwrclpy — Zero-to-Run Guide (Fast DDS v3)
+# lwrclpy with Fast DDS v3
 
 [![CI](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/ci.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/ci.yml)
 [![Test Ubuntu](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/tatsuyai713/lwrclpy-for-FastDDSv3/actions/workflows/test-ubuntu.yml)
