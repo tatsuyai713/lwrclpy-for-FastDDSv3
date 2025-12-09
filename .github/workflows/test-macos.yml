@@ -28,7 +28,8 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: wheel-macos-py${{ matrix.python-version }}
-        path: dist/
+        path: downloaded-wheel/
+        merge-multiple: false
     
     - name: Install wheel
       run: |
@@ -37,9 +38,10 @@ jobs:
         pip install --upgrade pip
         # List available wheels for debugging
         echo "Available wheels:"
-        ls -la dist/
-        # Install the wheel
-        pip install dist/*.whl
+        ls -la downloaded-wheel/
+        # Install only macOS wheel for current Python version
+        PYVER=$(python -c 'import sys; print("".join(map(str, sys.version_info[:2])))')
+        pip install downloaded-wheel/lwrclpy-*-cp${PYVER}-cp${PYVER}-macosx*.whl
     
     - name: Run tests
       run: |
