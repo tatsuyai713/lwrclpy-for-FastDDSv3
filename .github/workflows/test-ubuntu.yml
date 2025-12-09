@@ -35,9 +35,11 @@ jobs:
         python -m venv test_venv
         source test_venv/bin/activate
         pip install --upgrade pip
-        # Install only the wheel matching current Python version and platform
-        PYVER=$(python -c 'import sys; print("".join(map(str, sys.version_info[:2])))')
-        pip install dist/*cp${PYVER}*linux*.whl
+        # List available wheels for debugging
+        echo "Available wheels:"
+        ls -la dist/
+        # Install the wheel - should be x86_64 on GitHub Actions Ubuntu runners
+        pip install dist/*.whl
     
     - name: Run tests
       run: |
