@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     name: Test macOS Python ${{ matrix.python-version }}
-    runs-on: macos-15-intel
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:

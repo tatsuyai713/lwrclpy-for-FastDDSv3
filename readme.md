@@ -229,25 +229,29 @@ This project uses GitHub Actions for automated testing and building:
 
 ### CI Workflows
 
-- **Test Ubuntu** (`.github/workflows/test-ubuntu.yml`)
-  - Tests on Ubuntu 20.04 and 22.04
-  - Python versions: 3.8, 3.9, 3.10, 3.11
-  - Runs full test suite for each combination
-
-- **Test macOS** (`.github/workflows/test-macos.yml`)
-  - Tests on macOS latest
-  - Python versions: 3.9, 3.10, 3.11, 3.12
-  - Validates Apple Silicon compatibility
+- **CI** (`.github/workflows/ci.yml`)
+  - Main orchestrator workflow that triggers all build and test jobs
+  - Runs on push to main branch and pull requests
 
 - **Build Ubuntu Wheels** (`.github/workflows/build-ubuntu.yml`)
-  - Builds distribution wheels for Ubuntu
-  - Tests wheel installation
-  - Uploads artifacts for releases
+  - Builds distribution wheels for Ubuntu 24.04
+  - Python version: 3.12
+  - Uploads artifacts for testing and releases
 
 - **Build macOS Wheels** (`.github/workflows/build-macos.yml`)
-  - Builds distribution wheels for macOS (Universal2)
-  - Tests wheel installation
-  - Uploads artifacts for releases
+  - Builds distribution wheels for macOS 15 (Apple Silicon ARM64)
+  - Python version: 3.11
+  - Uploads artifacts for testing and releases
+
+- **Test Ubuntu** (`.github/workflows/test-ubuntu.yml`)
+  - Tests on Ubuntu 24.04 with Python 3.12
+  - Downloads and installs built wheel
+  - Runs full test suite including all examples
+
+- **Test macOS** (`.github/workflows/test-macos.yml`)
+  - Tests on macOS 15 (Apple Silicon ARM64) with Python 3.11
+  - Downloads and installs built wheel
+  - Validates all examples work correctly
 
 Each build rebuilds FastDDS v3 from scratch to ensure clean builds without cache dependencies.
 

@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     name: Build macOS Wheel (Python ${{ matrix.python-version }})
-    runs-on: macos-latest
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
