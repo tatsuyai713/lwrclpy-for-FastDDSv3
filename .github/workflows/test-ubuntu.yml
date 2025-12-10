@@ -41,7 +41,12 @@ jobs:
         ls -la downloaded-wheel/
         # Install only x86_64 Linux wheel for current Python version
         PYVER=$(python -c 'import sys; print("".join(map(str, sys.version_info[:2])))')
-        pip install downloaded-wheel/lwrclpy-*-cp${PYVER}-cp${PYVER}-linux_x86_64.whl
+        WHEEL_FILE=$(ls downloaded-wheel/lwrclpy-*-cp${PYVER}-cp${PYVER}-linux_x86_64.whl 2>/dev/null | head -n1)
+        if [ -z "$WHEEL_FILE" ]; then
+          echo "Error: No matching wheel found for Python ${PYVER} linux_x86_64"
+          exit 1
+        fi
+        pip install "$WHEEL_FILE"
     
     - name: Run tests
       run: |
