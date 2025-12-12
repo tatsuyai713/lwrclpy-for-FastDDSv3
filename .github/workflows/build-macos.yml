@@ -45,7 +45,7 @@ jobs:
         source build_venv/bin/activate
         python -m pip install --upgrade pip wheel setuptools
     
-    - name: Install FastDDS v3 and Generate Python types
+    - name: Install FastDDS v3, Generate Python types, and Build wheel
       run: |
         source build_venv/bin/activate
         sudo mkdir -p /opt/fast-dds-v3
@@ -58,20 +58,9 @@ jobs:
         export DYLD_LIBRARY_PATH="/opt/fast-dds-v3/lib:/opt/fast-dds-v3/lib64:${DYLD_LIBRARY_PATH:-}"
         export PYTHONPATH="/opt/fast-dds-v3/lib/python$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:${PYTHONPATH:-}"
         cd scripts/mac && bash mac_gen_python_types.sh
-    
-    - name: Build wheel
-      run: |
-        source build_venv/bin/activate
-        # Re-export environment variables needed for wheel building
-        export PATH="/opt/fast-dds-gen-v3/bin:$PATH"
-        export FASTDDSGEN_BIN="/opt/fast-dds-gen-v3/bin/fastddsgen"
-        export PREFIX_V3="/opt/fast-dds-v3"
-        export CMAKE_PREFIX_PATH="/opt/fast-dds-v3:${CMAKE_PREFIX_PATH:-}"
-        export DYLD_LIBRARY_PATH="/opt/fast-dds-v3/lib:/opt/fast-dds-v3/lib64:${DYLD_LIBRARY_PATH:-}"
-        export PYTHONPATH="/opt/fast-dds-v3/lib/python$(python -c 'import sys;print("{}.{}".format(*sys.version_info[:2]))')/site-packages:${PYTHONPATH:-}"
+        cd ../..
         rm -rf dist/
-        # Unset PYTHONPATH before running python -m build to avoid double free
-        env -u PYTHONPATH bash scripts/mac/mac_make_pip_package_with_runtime.sh
+        bash scripts/mac/mac_make_pip_package_with_runtime.sh
     
     - name: Upload wheel
       uses: actions/upload-artifact@v4
